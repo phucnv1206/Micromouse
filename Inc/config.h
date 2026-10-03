@@ -12,6 +12,9 @@
 #ifndef ENCODER_ENABLED
 #define ENCODER_ENABLED 1U
 #endif
+#ifndef TOF_ENABLED
+#define TOF_ENABLED 1U
+#endif
 
 #define ODOMETRY_UPDATE_FREQUENCY_HZ 1000U
 #define ODOMETRY_TIMER_COUNTER_HZ 1000000U
@@ -33,8 +36,6 @@
 #define MOTOR_LEFT_PWM_DEADZONE_US 35U
 #define MOTOR_LEFT_PWM_MAXZONE_US 800U
 #define MOTOR_LEFT_REVERSE_DIRECTION 1U
-#define MOTOR_TEST_PULSE_MAX_US MOTOR_PWM_PULSE_MAX_US
-#define MOTOR_TEST_RAMP_STEP 5U
 #define MOTOR_PWM_FREQUENCY_HZ 50U
 #define MOTOR_PWM_COUNTER_HZ 1000000U
 /* Nút dùng pull-up: trạng thái nhấn là RESET; chống dội 20 ms, giữ 800 ms phát HOLD. */
@@ -68,6 +69,7 @@
 #define ODOMETRY_INITIAL_HEADING_DEG 90.0f
 
 /* Board pin assignments. */
+
 #define LED1 GPIO_PIN_13
 #define LED1_Port GPIOC
 #define LED2 GPIO_PIN_14

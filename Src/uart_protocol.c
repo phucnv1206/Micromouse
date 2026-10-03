@@ -42,12 +42,18 @@ static volatile uint32_t rx_error_code;
 static volatile uint32_t dropped_frame_count;
 
 /*
- * Ghi một số uint16_t vào khung theo thứ tự big-endian:
- * byte có trọng số cao được đặt trước để khớp định dạng gói của ESP32.
+ * Ghi mẫu bit int16_t theo thứ tự big-endian, không đổi mã hóa signed.
  */
-static void UartProtocol_WriteUint16BE(uint8_t *destination, uint16_t value) {
-  destination[0] = (uint8_t)(value >> 8U);
-  destination[1] = (uint8_t)value;
+static void UartProtocol_WriteInt16BE(uint8_t *destination, int16_t value) {
+  uint16_t bits = (uint16_t)value;
+  destination[0] = (uint8_t)(bits >> 8U);
+  destination[1] = (uint8_t)bits;
+}
+
+static int16_t UartProtocol_ReadInt16BE(const uint8_t *source) {
+  uint16_t bits = (uint16_t)(((uint16_t)source[0] << 8U) | source[1]);
+  int32_t value = bits <= INT16_MAX ? (int32_t)bits : (int32_t)bits - 65536;
+  return (int16_t)value;
 }
 
 /*
@@ -136,8 +142,8 @@ HAL_StatusTypeDef UartProtocol_Send(const uint8_t frame[UART_PROTOCOL_TX_FRAME_S
 
 /*
  * Đóng gói telemetry thành khung TX 16 byte:
- * AA BB, sau đó lần lượt là x, y, góc, tốc độ trái, tốc độ phải, data1, data2.
- * Mỗi giá trị uint16_t chiếm 2 byte big-endian; tổng cộng 2 + 7*2 = 16 byte.
+ * AA BB, sau đó lần lượt là data1..data7 dạng int16_t big-endian.
+ * Tổng cộng 2 + 7*2 = 16 byte.
  * Việc truyền thực tế được giao cho UartProtocol_Send().
  */
 HAL_StatusTypeDef UartProtocol_SendTelemetry(const UartProtocol_Telemetry *telemetry) {
@@ -150,13 +156,13 @@ HAL_StatusTypeDef UartProtocol_SendTelemetry(const UartProtocol_Telemetry *telem
     return HAL_ERROR;
   }
 
-  UartProtocol_WriteUint16BE(&frame[2], telemetry->x_mm_encoded);
-  UartProtocol_WriteUint16BE(&frame[4], telemetry->y_mm_encoded);
-  UartProtocol_WriteUint16BE(&frame[6], telemetry->heading_half_degrees);
-  UartProtocol_WriteUint16BE(&frame[8], telemetry->left_speed_mm_s_encoded);
-  UartProtocol_WriteUint16BE(&frame[10], telemetry->right_speed_mm_s_encoded);
-  UartProtocol_WriteUint16BE(&frame[12], telemetry->data1);
-  UartProtocol_WriteUint16BE(&frame[14], telemetry->data2);
+  UartProtocol_WriteInt16BE(&frame[2], telemetry->data1);
+  UartProtocol_WriteInt16BE(&frame[4], telemetry->data2);
+  UartProtocol_WriteInt16BE(&frame[6], telemetry->data3);
+  UartProtocol_WriteInt16BE(&frame[8], telemetry->data4);
+  UartProtocol_WriteInt16BE(&frame[10], telemetry->data5);
+  UartProtocol_WriteInt16BE(&frame[12], telemetry->data6);
+  UartProtocol_WriteInt16BE(&frame[14], telemetry->data7);
 
   return UartProtocol_Send(frame);
 }
@@ -167,7 +173,8 @@ HAL_StatusTypeDef UartProtocol_SendTelemetry(const UartProtocol_Telemetry *telem
  * chỉ số hoặc sao chép khung; sau đó khôi phục đúng trạng thái ngắt ban đầu.
  * Trả HAL_BUSY nếu chưa có gói, HAL_ERROR nếu con trỏ đích không hợp lệ.
  */
-HAL_StatusTypeDef UartProtocol_Receive(uint8_t frame[UART_PROTOCOL_RX_FRAME_SIZE]) {
+HAL_StatusTypeDef UartProtocol_Receive(UartProtocol_RxFrame *frame) {
+  uint8_t rawFrame[UART_PROTOCOL_RX_FRAME_SIZE];
   uint32_t primask;
 
   if (frame == NULL) {
@@ -185,13 +192,19 @@ HAL_StatusTypeDef UartProtocol_Receive(uint8_t frame[UART_PROTOCOL_RX_FRAME_SIZE
   }
 
   for (uint32_t i = 0U; i < UART_PROTOCOL_RX_FRAME_SIZE; i++) {
-    frame[i] = rx_frames[rx_tail][i];
+    rawFrame[i] = rx_frames[rx_tail][i];
   }
   rx_tail = (uint8_t)((rx_tail + 1U) % UART_PROTOCOL_RX_QUEUE_SIZE);
   if (primask == 0U) {
     __enable_irq();
   }
 
+  frame->header1 = rawFrame[0];
+  frame->header2 = rawFrame[1];
+  frame->command = rawFrame[2];
+  frame->data1 = UartProtocol_ReadInt16BE(&rawFrame[3]);
+  frame->data2 = UartProtocol_ReadInt16BE(&rawFrame[5]);
+  frame->data3 = rawFrame[7];
   return HAL_OK;
 }
 

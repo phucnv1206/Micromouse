@@ -13,6 +13,12 @@ static uint32_t cpuBusyCyclesWindow;
 static uint32_t cpuLoadWindowStartTick;
 /* Tải CPU theo 0,1%; 123 tương ứng 12,3%, gửi qua telemetry.data2. */
 static uint16_t cpuLoadTenthsPercent;
+static UartProtocol_Telemetry debugTelemetry;
+static Odometry_State debugOdometryState;
+static uint16_t debugLeftDistanceMm;
+static uint16_t debugMidDistanceMm;
+static uint16_t debugRightDistanceMm;
+#if ODOMETRY_ENABLED
 /* Cờ báo timer odometry vừa đến hạn; volatile vì được cập nhật trong ngắt TIM3. */
 static volatile uint8_t odometryUpdatePending;
 /* Ngắt TIM3 chạy theo tần số odometry và chỉ báo công việc cho vòng lặp chính. */
@@ -24,74 +30,74 @@ void TIM3_IRQHandler(void) {
     odometryUpdatePending = 1U;
   }
 }
+#endif
 
-/* Payload UART là int16 big-endian lưu dưới dạng bit pattern uint16. */
-static int16_t DecodeMotorCommand(uint16_t encodedCommand) {
-  int32_t signedCommand = encodedCommand <= INT16_MAX ? (int32_t)encodedCommand : (int32_t)encodedCommand - 65536;
-
-  return (int16_t)signedCommand;
-}
-
-/*
- * Đổi số có dấu thành uint16 theo quy ước ESP32:
- * giải mã bằng encoded - 32767. Giá trị được làm tròn về số nguyên gần nhất
- * và chặn ở biên biểu diễn để không tràn khi đóng gói UART.
- */
-static uint16_t EncodeSignedTelemetryValue(float value) {
-  int32_t signedValue;
-
-  /* ESP32 giải mã giá trị mm và mm/s có dấu bằng cách lấy mã hóa trừ 32767. */
-  if (value <= -32767.0f) {
-    return 0U;
-  } else if (value >= 32768.0f) {
-    return 65535U;
-  }
-
-  signedValue = (int32_t)(value >= 0.0f ? value + 0.5f : value - 0.5f);
-  return (uint16_t)(signedValue + 32767);
-}
 
 /*
  * Vòng điều khiển 100 Hz: lấy hết các frame UART đã xếp hàng, giữ lệnh hợp lệ
  * mới nhất rồi cập nhật PWM phải/trái. HAL_BUSY có nghĩa là hàng đợi đã hết;
  * lỗi nhận khác được chuyển sang Error_Handler().
  */
-static void loop(void) {
-  uint8_t rxFrame[UART_PROTOCOL_RX_FRAME_SIZE];
+
+static void readUart(void){
+  UartProtocol_RxFrame rxFrame;
   int16_t motorRightCommand = 0;
   int16_t motorLeftCommand = 0;
   uint8_t commandReceived = 0U;
   HAL_StatusTypeDef receiveStatus;
-
-
-  /* Đọc hết frame đang chờ để không dùng lệnh cũ nếu queue có nhiều frame. */
   do {
-    receiveStatus = UartProtocol_Receive(rxFrame);
+    receiveStatus = UartProtocol_Receive(&rxFrame);
     if (receiveStatus == HAL_OK) {
-      uint16_t encodedRight = ((uint16_t)rxFrame[UART_PROTOCOL_DATA1_OFFSET] << 8U) | rxFrame[UART_PROTOCOL_DATA1_OFFSET + 1U];
-      uint16_t encodedLeft = ((uint16_t)rxFrame[UART_PROTOCOL_DATA2_OFFSET] << 8U) | rxFrame[UART_PROTOCOL_DATA2_OFFSET + 1U];
-      int16_t rightCommand = DecodeMotorCommand(encodedRight);
-      int16_t leftCommand = DecodeMotorCommand(encodedLeft);
-
       /* Lệnh ngoài -100..100 được MotorPwm_Set() bão hòa về giới hạn gần nhất. */
-      motorRightCommand = rightCommand;
-      motorLeftCommand = leftCommand;
+      motorRightCommand = rxFrame.data1;
+      motorLeftCommand = rxFrame.data2;
       commandReceived = 1U;
     } else if (receiveStatus != HAL_BUSY) {
       Error_Handler();
     }
   } while (receiveStatus == HAL_OK);
   if (commandReceived != 0U) {
-    RunMotorRight(motorRightCommand - 100);
-    RunMotorLeft(motorLeftCommand - 100);
+    RunMotorRight(motorRightCommand);
+    RunMotorLeft(motorLeftCommand);
   }
 }
 
+
+
+static void loop(void) {
+  readUart();
+  /* code here*/
+
+
+  
+}
+
+
+
+static void debug(void) {
+  
+#if ODOMETRY_ENABLED
+  debugTelemetry.data1 = (int16_t)debugOdometryState.x_mm;
+  debugTelemetry.data2 = (int16_t)debugOdometryState.y_mm;
+  debugTelemetry.data3 = (int16_t)debugOdometryState.heading_deg;
+#else
+  debugTelemetry.data1 = 0;
+  debugTelemetry.data2 = 0;
+  debugTelemetry.data3 = 0;
+#endif
+  debugTelemetry.data4 = (int16_t)debugMidDistanceMm;
+  debugTelemetry.data5 = (int16_t)debugLeftDistanceMm;
+  debugTelemetry.data6 = (int16_t)debugRightDistanceMm;
+  debugTelemetry.data7 = (int16_t)cpuLoadTenthsPercent;
+}
+
+
+
+
 int main(void) {
   /*
-   * Khởi tạo ngoại vi rồi chạy ba công việc độc lập:
-   * odometry theo TIM3, lệnh motor theo CONTROL_LOOP_FREQUENCY_HZ,
-   * telemetry theo UART_TELEMETRY_FREQUENCY_HZ.
+   * Khởi tạo ngoại vi rồi chạy điều khiển motor và telemetry; odometry
+   * chỉ được bật khi ODOMETRY_ENABLED=1.
    */
   const uint32_t loopPeriodMs = 1000U / CONTROL_LOOP_FREQUENCY_HZ;
   const uint32_t telemetryPeriodMs = 1000U / UART_TELEMETRY_FREQUENCY_HZ;
@@ -109,39 +115,46 @@ int main(void) {
   // Led_SetPattern(3U, 3U, 100U, 0U, 100U);
 
 
-  /* Khởi tạo encoder trước odometry để odometry lấy được snapshot ban đầu. */
+  /* Chỉ khởi tạo encoder khi được bật; odometry yêu cầu encoder hoạt động. */
+#if ENCODER_ENABLED
   if (Encoder_Init() != HAL_OK) {
-
     Error_Handler();
   }
+#endif
+#if ODOMETRY_ENABLED
   if (Odometry_Init() != HAL_OK) {
     Error_Handler();
   }
-  /* Khởi tạo bộ định thời phần cứng tạo nhịp cập nhật odometry. */
+  /* Chỉ bật timer khi odometry được cấu hình. */
   if (Config_OdometryTimer_Init() != HAL_OK) {
     Error_Handler();
   }
+#endif
   if (MotorPwm_Init() != HAL_OK) {
-    
     Error_Handler();
   }
   if (UartProtocol_Init() != HAL_OK) {
-    
     Error_Handler();
   }
-  /* Khởi tạo ba cảm biến tuần tự; LED tương ứng sáng sau khi mỗi sensor init xong. */
+  /* Chỉ khởi tạo ToF và I2C khi bật cấu hình cảm biến. */
+#if TOF_ENABLED
   TofSensors_Init();
+#endif
 
   /* Bật DWT CYCCNT để đo thời gian xử lý và tải CPU bằng số chu kỳ CPU. */
   CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
   DWT->CYCCNT = 0U;
   DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 
+#if ODOMETRY_ENABLED
   odometryUpdatePending = 0U;
+#endif
   cpuBusyCyclesWindow = 0U;
   cpuLoadTenthsPercent = 0U;
-  /* Bắt đầu nhịp TIM3 sau khi mọi module cần thiết đã sẵn sàng. */
+  /* Bắt đầu nhịp TIM3 chỉ khi odometry được bật. */
+#if ODOMETRY_ENABLED
   Config_OdometryTimer_Start();
+#endif
 
   /* Khởi tạo deadline tuyệt đối để các task giữ được tần số đã cấu hình. */
   uint32_t startTick = HAL_GetTick();
@@ -149,8 +162,11 @@ int main(void) {
   nextLoopTick = startTick + loopPeriodMs;
   nextTelemetryTick = startTick + telemetryPeriodMs;
 
+
+
+
+
   while (1) {
-    /* Bắt đầu đo phần xử lý của lượt này; đoạn ngủ WFI sẽ không được tính. */
     uint32_t workStartCycles = DWT->CYCCNT;
     uint32_t now = HAL_GetTick();
     uint8_t taskRan = 0U;
@@ -158,7 +174,8 @@ int main(void) {
     Led_Update();
     Button_Update();
 
-    /* Chỉ khóa ngắt trong lúc đọc/xóa cờ dùng chung với ISR TIM3. */
+    /* Chỉ kiểm tra cờ timer khi odometry được bật. */
+#if ODOMETRY_ENABLED
     uint32_t primask = __get_PRIMASK();
     uint8_t odometryDue = 0U;
     __disable_irq();
@@ -177,6 +194,7 @@ int main(void) {
       }
       taskRan = 1U;
     }
+#endif
 
     /* Chạy xử lý lệnh motor theo deadline, không phụ thuộc nhịp odometry. */
     if ((int32_t)(now - nextLoopTick) >= 0) {
@@ -191,30 +209,20 @@ int main(void) {
 
     /* Đóng gói trạng thái odometry và hai trường dữ liệu ứng dụng để gửi UART. */
     if ((int32_t)(now - nextTelemetryTick) >= 0) {
-      Odometry_State state;
-      UartProtocol_Telemetry telemetry;
-      uint16_t leftDistanceMm;
-      uint16_t midDistanceMm;
-      uint16_t rightDistanceMm;
-
-      if (Odometry_GetState(&state) != HAL_OK) {
+#if ODOMETRY_ENABLED
+      if (Odometry_GetState(&debugOdometryState) != HAL_OK) {
         Error_Handler();
       }
-      if (TofSensors_UpdateDistances(&leftDistanceMm, &midDistanceMm, &rightDistanceMm) != HAL_OK) {
+#endif
+#if TOF_ENABLED
+      if (!TofSensors_UpdateDistances(&debugLeftDistanceMm, &debugMidDistanceMm,
+                                      &debugRightDistanceMm)) {
         Error_Handler();
       }
-      telemetry.x_mm_encoded = EncodeSignedTelemetryValue(state.x_mm);
-      telemetry.y_mm_encoded = EncodeSignedTelemetryValue(state.y_mm);
-      telemetry.heading_half_degrees = (uint16_t)(state.heading_deg * 0.5f + 0.5f) % 180U;
-      /* Dùng tạm hai trường tốc độ để gửi khoảng cách trái/phải đã mã hóa signed, đơn vị mm. */
-      telemetry.left_speed_mm_s_encoded = EncodeSignedTelemetryValue((float)leftDistanceMm);
-      telemetry.right_speed_mm_s_encoded = EncodeSignedTelemetryValue((float)rightDistanceMm);
-      /* Dùng tạm data1 để gửi khoảng cách cảm biến giữa, đơn vị mm. */
-      telemetry.data1 = midDistanceMm;
-      /* data2: tải CPU trung bình theo 0,1%; 0..1000 tương ứng 0..100,0%. */
-      telemetry.data2 = cpuLoadTenthsPercent;
+#endif
+      debug();
 
-      if (UartProtocol_SendTelemetry(&telemetry) != HAL_OK) {
+      if (UartProtocol_SendTelemetry(&debugTelemetry) != HAL_OK) {
         Error_Handler();
       }
 
@@ -234,14 +242,10 @@ int main(void) {
      */
     uint32_t workEndCycles = DWT->CYCCNT;
     cpuBusyCyclesWindow += workEndCycles - workStartCycles;
-
     uint32_t loadWindowElapsedMs = HAL_GetTick() - cpuLoadWindowStartTick;
     if (loadWindowElapsedMs >= 1000U) {
       uint64_t windowCycles = ((uint64_t)SystemCoreClock * loadWindowElapsedMs) / 1000U;
-      uint64_t loadPercent = windowCycles != 0U
-                                 ? ((uint64_t)cpuBusyCyclesWindow * 1000U + windowCycles / 2U) / windowCycles
-                                 : 0U;
-
+      uint64_t loadPercent = windowCycles != 0U ? ((uint64_t)cpuBusyCyclesWindow * 1000U + windowCycles / 2U) / windowCycles : 0U;
       cpuLoadTenthsPercent = loadPercent > 1000U ? 1000U : (uint16_t)loadPercent;
       cpuBusyCyclesWindow = 0U;
       cpuLoadWindowStartTick = HAL_GetTick();
@@ -254,9 +258,13 @@ int main(void) {
        */
       uint32_t sleepPrimask = __get_PRIMASK();
       __disable_irq();
+#if ODOMETRY_ENABLED
       if (odometryUpdatePending == 0U) {
         __WFI();
       }
+#else
+      __WFI();
+#endif
       if (sleepPrimask == 0U) {
         __enable_irq();
       }
@@ -266,7 +274,6 @@ int main(void) {
 
 void Error_Handler(void) {
   Led_SetPattern(1U, 1U, 100U, 100U, 100U);
-
   while (1) {
     Led_Update();
     

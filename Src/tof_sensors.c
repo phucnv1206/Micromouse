@@ -2,7 +2,6 @@
 #include "main.h"
 #include "config.h"
 #include "i2c_bus.h"
-#include "led.h"
 #include "tof_sensors.h"
 #include "VL53L1X_api.h"
 
@@ -27,19 +26,6 @@ static VL53L0X_Error lastError = VL53L0X_ERROR_NONE;
 static VL53L1X_ERROR lastL1Error = 0;
 static TofSensors_InitStage lastInitStage = TOF_INIT_STAGE_NONE;
 static TofXshut_Sensor lastInitSensor = TOF_SENSOR_RIGHT;
-
-static uint8_t TofSensors_GetLedNumber(TofXshut_Sensor sensor) {
-  switch (sensor) {
-    case TOF_SENSOR_LEFT:
-      return 1U;
-    case TOF_SENSOR_MID:
-      return 2U;
-    case TOF_SENSOR_RIGHT:
-      return 3U;
-    default:
-      return 0U;
-  }
-}
 
 /* Giữ mã lỗi API ST để bên gọi có thể chẩn đoán khi khởi tạo thất bại. */
 static HAL_StatusTypeDef TofSensors_CheckApiStatus(VL53L0X_Error status) {
@@ -195,10 +181,6 @@ HAL_StatusTypeDef TofSensors_Init(void) {
   memset(distanceMm, 0, sizeof(distanceMm));
   lastInitStage = TOF_INIT_STAGE_NONE;
   lastInitSensor = TOF_SENSOR_RIGHT;
-  for (uint8_t ledNumber = 1U; ledNumber <= 3U; ledNumber++) {
-    Led_SetPattern(ledNumber, 0U, 0U, 0U, 0U);
-  }
-  Led_Update();
 
   devices[TOF_SENSOR_RIGHT].sensor = TOF_SENSOR_RIGHT;
   devices[TOF_SENSOR_RIGHT].address7Bit = TOF_SENSOR_RIGHT_I2C_ADDRESS;
@@ -240,8 +222,6 @@ HAL_StatusTypeDef TofSensors_Init(void) {
     if (TofSensors_ConfigureDevice(&devices[i]) != HAL_OK) {
       goto initialization_failed;
     }
-    Led_SetPattern(TofSensors_GetLedNumber(devices[i].sensor), 1U, 100U, 0U, 0U);
-    Led_Update();
     if (i + 1U < TOF_SENSOR_COUNT) {
       HAL_Delay(TOF_SENSOR_INTER_INIT_DELAY_MS);
     }
@@ -250,13 +230,23 @@ HAL_StatusTypeDef TofSensors_Init(void) {
   return HAL_OK;
 
 initialization_failed:
-  /* Tắt cảm biến lỗi; giữ các cảm biến đã init và LED trạng thái của chúng. */
+  /* Tắt cảm biến lỗi; giữ nguyên trạng thái của các cảm biến init thành công. */
   TofXshut_Set(lastInitSensor, false);
   devices[lastInitSensor].initialized = 0U;
   return HAL_ERROR;
 }
 
-HAL_StatusTypeDef TofSensors_UpdateDistances(uint16_t *leftMm, uint16_t *midMm, uint16_t *rightMm) {
+bool TofSensors_UpdateDistances(uint16_t *leftMm, uint16_t *midMm, uint16_t *rightMm) {
+  if (leftMm == NULL || midMm == NULL || rightMm == NULL) {
+    return false;
+  }
+
+#if !TOF_ENABLED
+  *leftMm = 0U;
+  *midMm = 0U;
+  *rightMm = 0U;
+  return false;
+#else
   VL53L0X_RangingMeasurementData_t measurement;
   VL53L0X_DEV device;
   uint8_t dataReady = 0U;
@@ -264,26 +254,28 @@ HAL_StatusTypeDef TofSensors_UpdateDistances(uint16_t *leftMm, uint16_t *midMm, 
   uint16_t midDistance = 0U;
   VL53L0X_Error l0Status;
 
-  if (leftMm == NULL || midMm == NULL || rightMm == NULL
-      || devices[TOF_SENSOR_LEFT].initialized == 0U
+  if (devices[TOF_SENSOR_LEFT].initialized == 0U
       || devices[TOF_SENSOR_MID].initialized == 0U
       || devices[TOF_SENSOR_RIGHT].initialized == 0U) {
-    return HAL_ERROR;
+    *leftMm = 0U;
+    *midMm = 0U;
+    *rightMm = 0U;
+    return false;
   }
 
   device = &devices[TOF_SENSOR_LEFT].driver;
   l0Status = VL53L0X_GetMeasurementDataReady(device, &dataReady);
   if (TofSensors_CheckApiStatus(l0Status) != HAL_OK) {
-    return HAL_ERROR;
+    return false;
   }
   if (dataReady != 0U) {
     l0Status = VL53L0X_GetRangingMeasurementData(device, &measurement);
     if (TofSensors_CheckApiStatus(l0Status) != HAL_OK) {
-      return HAL_ERROR;
+      return false;
     }
     l0Status = VL53L0X_ClearInterruptMask(device, 0U);
     if (TofSensors_CheckApiStatus(l0Status) != HAL_OK) {
-      return HAL_ERROR;
+      return false;
     }
     if (measurement.RangeStatus == 0U) {
       distanceMm[TOF_SENSOR_LEFT] = measurement.RangeMilliMeter;
@@ -294,23 +286,23 @@ HAL_StatusTypeDef TofSensors_UpdateDistances(uint16_t *leftMm, uint16_t *midMm, 
   lastL1Error = VL53L1X_CheckForDataReady(
       (uint16_t)(TOF_SENSOR_MID_I2C_ADDRESS << 1U), &dataReady);
   if (lastL1Error != 0) {
-    return HAL_ERROR;
+    return false;
   }
   if (dataReady != 0U) {
     lastL1Error = VL53L1X_GetRangeStatus(
         (uint16_t)(TOF_SENSOR_MID_I2C_ADDRESS << 1U), &rangeStatus);
     if (lastL1Error != 0) {
-      return HAL_ERROR;
+      return false;
     }
     lastL1Error = VL53L1X_GetDistance(
         (uint16_t)(TOF_SENSOR_MID_I2C_ADDRESS << 1U), &midDistance);
     if (lastL1Error != 0) {
-      return HAL_ERROR;
+      return false;
     }
     lastL1Error = VL53L1X_ClearInterrupt(
         (uint16_t)(TOF_SENSOR_MID_I2C_ADDRESS << 1U));
     if (lastL1Error != 0) {
-      return HAL_ERROR;
+      return false;
     }
     if (rangeStatus == 0U) {
       distanceMm[TOF_SENSOR_MID] = midDistance;
@@ -321,16 +313,16 @@ HAL_StatusTypeDef TofSensors_UpdateDistances(uint16_t *leftMm, uint16_t *midMm, 
   dataReady = 0U;
   l0Status = VL53L0X_GetMeasurementDataReady(device, &dataReady);
   if (TofSensors_CheckApiStatus(l0Status) != HAL_OK) {
-    return HAL_ERROR;
+    return false;
   }
   if (dataReady != 0U) {
     l0Status = VL53L0X_GetRangingMeasurementData(device, &measurement);
     if (TofSensors_CheckApiStatus(l0Status) != HAL_OK) {
-      return HAL_ERROR;
+      return false;
     }
     l0Status = VL53L0X_ClearInterruptMask(device, 0U);
     if (TofSensors_CheckApiStatus(l0Status) != HAL_OK) {
-      return HAL_ERROR;
+      return false;
     }
     if (measurement.RangeStatus == 0U) {
       distanceMm[TOF_SENSOR_RIGHT] = measurement.RangeMilliMeter;
@@ -340,59 +332,8 @@ HAL_StatusTypeDef TofSensors_UpdateDistances(uint16_t *leftMm, uint16_t *midMm, 
   *leftMm = distanceMm[TOF_SENSOR_LEFT];
   *midMm = distanceMm[TOF_SENSOR_MID];
   *rightMm = distanceMm[TOF_SENSOR_RIGHT];
-  return HAL_OK;
-}
-
-HAL_StatusTypeDef TofSensors_ScanI2c(uint8_t *foundMask) {
-  if (foundMask == NULL) {
-    return HAL_ERROR;
-  }
-
-  *foundMask = 0U;
-  for (uint8_t ledNumber = 1U; ledNumber <= 3U; ledNumber++) {
-    Led_SetPattern(ledNumber, 0U, 0U, 0U, 0U);
-  }
-  Led_Update();
-
-  TofXshut_Init();
-  HAL_Delay(TOF_XSHUT_RESET_DELAY_MS);
-
-  for (uint32_t i = 0U; i < TOF_SENSOR_COUNT; i++) {
-    TofXshut_Sensor sensor = (TofXshut_Sensor)i;
-    HAL_StatusTypeDef status;
-
-    lastInitSensor = sensor;
-    for (uint32_t other = 0U; other < TOF_SENSOR_COUNT; other++) {
-      if (other != i && TofXshut_Set((TofXshut_Sensor)other, false) != HAL_OK) {
-        TofXshut_Init();
-        return HAL_ERROR;
-      }
-    }
-    if (TofXshut_Set(sensor, true) != HAL_OK) {
-      TofXshut_Init();
-      return HAL_ERROR;
-    }
-
-    HAL_Delay(TOF_SENSOR_BOOT_DELAY_MS);
-    status = I2cBus_IsDeviceReady(VL53L0X_DEFAULT_I2C_ADDRESS, 3U);
-    if (status == HAL_OK) {
-      *foundMask |= (uint8_t)(1U << (uint32_t)sensor);
-      Led_SetPattern(TofSensors_GetLedNumber(sensor), 1U, 100U, 0U, 0U);
-      Led_Update();
-    } else if (status != HAL_ERROR) {
-      TofXshut_Init();
-      return status;
-    }
-
-    if (TofXshut_Set(sensor, false) != HAL_OK) {
-      TofXshut_Init();
-      return HAL_ERROR;
-    }
-    HAL_Delay(TOF_XSHUT_RESET_DELAY_MS);
-  }
-
-  TofXshut_Init();
-  return HAL_OK;
+  return true;
+#endif
 }
 
 VL53L0X_Error TofSensors_GetLastError(void) {

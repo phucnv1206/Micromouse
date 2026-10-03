@@ -8,34 +8,30 @@
 #define UART_PROTOCOL_RX_FRAME_SIZE 8U
 #define UART_PROTOCOL_HEADER_BYTE_1 0xAAU
 #define UART_PROTOCOL_HEADER_BYTE_2 0xBBU
-#define UART_PROTOCOL_COMMAND_OFFSET 2U
-#define UART_PROTOCOL_DATA1_OFFSET 3U
-#define UART_PROTOCOL_DATA2_OFFSET 5U
 
 /*
- * Cấu trúc khung nhận (RX), tổng cộng 8 byte:
- *   [0..1] Header AA BB
- *   [2]    Mã lệnh
- *   [3..4] Lệnh động cơ phải, int16_t có dấu, big-endian
- *   [5..6] Lệnh động cơ trái, int16_t có dấu, big-endian
- *   [7]    Byte dự phòng
- * Lệnh động cơ được mã hóa dạng bù 2 và có miền hợp lệ -100..100.
- */
-
-/*
- * Các trường telemetry được tuần tự hóa theo đúng thứ tự khai báo sau header
- * AA BB; mỗi trường chiếm 2 byte uint16_t và được gửi theo thứ tự big-endian.
- * Tên có hậu tố "encoded" cho biết giá trị đã được ứng dụng quy đổi về dạng
- * số nguyên trước khi đóng gói; module giao thức chỉ chịu trách nhiệm truyền.
+ * Các trường RX tương ứng khung dây 8 byte:
+ * header1, header2, command, data1 (int16 big-endian),
+ * data2 (int16 big-endian), data3.
  */
 typedef struct {
-  uint16_t x_mm_encoded;
-  uint16_t y_mm_encoded;
-  uint16_t heading_half_degrees;
-  uint16_t left_speed_mm_s_encoded;
-  uint16_t right_speed_mm_s_encoded;
-  uint16_t data1; /* Giá trị telemetry 16-bit do ứng dụng quy định ý nghĩa. */
-  uint16_t data2; /* Giá trị telemetry 16-bit do ứng dụng quy định ý nghĩa. */
+  uint8_t header1;
+  uint8_t header2;
+  uint8_t command;
+  int16_t data1;
+  int16_t data2;
+  uint8_t data3;
+} UartProtocol_RxFrame;
+
+/* Bảy giá trị debug int16_t, tuần tự hóa big-endian sau header AA BB. */
+typedef struct {
+  int16_t data1;
+  int16_t data2;
+  int16_t data3;
+  int16_t data4;
+  int16_t data5;
+  int16_t data6;
+  int16_t data7;
 } UartProtocol_Telemetry;
 
 HAL_StatusTypeDef UartProtocol_Init(void);
@@ -44,8 +40,8 @@ HAL_StatusTypeDef UartProtocol_Init(void);
 HAL_StatusTypeDef UartProtocol_Send(const uint8_t frame[UART_PROTOCOL_TX_FRAME_SIZE]);
 /* Đóng gói 7 trường telemetry theo big-endian sau header rồi gửi khung TX. */
 HAL_StatusTypeDef UartProtocol_SendTelemetry(const UartProtocol_Telemetry *telemetry);
-/* Lấy khung RX 8 byte kế tiếp; trả HAL_BUSY nếu hiện không có khung chờ. */
-HAL_StatusTypeDef UartProtocol_Receive(uint8_t frame[UART_PROTOCOL_RX_FRAME_SIZE]);
+/* Lấy khung RX kế tiếp, parse data1/data2 thành số int16_t có dấu. */
+HAL_StatusTypeDef UartProtocol_Receive(UartProtocol_RxFrame *frame);
 /* Bắt đầu/khởi động lại nhận UART nếu hiện không có yêu cầu nhận đang hoạt động. */
 HAL_StatusTypeDef UartProtocol_StartReceive(void);
 /* Đọc trạng thái nhận UART gần nhất và mã lỗi HAL để ứng dụng chẩn đoán sự cố. */

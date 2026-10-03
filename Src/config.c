@@ -66,6 +66,7 @@ static void Config_GPIO_Init(void) {
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(BUTTON1_Port, &GPIO_InitStruct);
 
+#if ENCODER_ENABLED
   GPIO_InitStruct.Pin = EN_RIGHT_B|EN_RIGHT_A;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -82,6 +83,7 @@ static void Config_GPIO_Init(void) {
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+#endif
 }
 
 static void Config_DMA_Init(void) {

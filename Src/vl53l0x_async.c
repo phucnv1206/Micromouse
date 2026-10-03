@@ -1,5 +1,6 @@
 #include "main.h"
 #include "vl53l0x_async.h"
+#include "config.h"
 #include "i2c_bus.h"
 #include "tof_sensors.h"
 
@@ -198,13 +199,24 @@ void Vl53l0xAsync_Process(void) {
 }
 
 static bool Vl53l0xAsync_TryGetDistance(uint16_t *distance, uint16_t *storedDistance, uint8_t *newData) {
-  if (distance == NULL || *newData == 0U) {
+  if (distance == NULL) {
+    return false;
+  }
+
+#if !TOF_ENABLED
+  (void)storedDistance;
+  (void)newData;
+  *distance = 0U;
+  return false;
+#else
+  if (*newData == 0U) {
     return false;
   }
 
   *distance = *storedDistance;
   *newData = 0U;
   return true;
+#endif
 }
 
 bool getDisLeft(uint16_t *dis_left) {
