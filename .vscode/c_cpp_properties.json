@@ -29,3 +29,8 @@
   ],
   "version": 4
 }
+
+// To locate the ARM GCC compiler used by STM32CubeIDE, run this command in PowerShell:
+// Get-ChildItem "C:\ST" -Filter "arm-none-eabi-gcc.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+// If CubeIDE is installed elsewhere, replace "C:\ST" with its installation folder.
+// Copy the resulting full path into "compilerPath" above. This path is used by VS Code IntelliSense.
