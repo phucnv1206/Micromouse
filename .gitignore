@@ -1,0 +1,15 @@
+# Build outputs and compiler intermediates
+*.elf
+*.hex
+*.bin
+*.map
+*.list
+*.o
+*.d
+*.su
+*.cyclo
+*.size.stdout
+
+# IDE and operating-system transient files
+.DS_Store
+Thumbs.db
