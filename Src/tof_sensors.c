@@ -22,10 +22,23 @@ typedef struct {
 
 static TofSensors_Device devices[TOF_SENSOR_COUNT];
 static uint16_t distanceMm[TOF_SENSOR_COUNT];
+static uint8_t distanceFilterInitialized[TOF_SENSOR_COUNT];
 static VL53L0X_Error lastError = VL53L0X_ERROR_NONE;
 static VL53L1X_ERROR lastL1Error = 0;
 static TofSensors_InitStage lastInitStage = TOF_INIT_STAGE_NONE;
 static TofXshut_Sensor lastInitSensor = TOF_SENSOR_RIGHT;
+
+static void TofSensors_UpdateFilteredDistance(TofXshut_Sensor sensor, uint16_t measurementMm) {
+  if (distanceFilterInitialized[sensor] == 0U) {
+    distanceMm[sensor] = measurementMm;
+    distanceFilterInitialized[sensor] = 1U;
+    return;
+  }
+
+  uint32_t filtered = (uint32_t)distanceMm[sensor] * (100U - TOF_LOWPASS_ALPHA_PERCENT)
+      + (uint32_t)measurementMm * TOF_LOWPASS_ALPHA_PERCENT;
+  distanceMm[sensor] = (uint16_t)((filtered + 50U) / 100U);
+}
 
 /* Giữ mã lỗi API ST để bên gọi có thể chẩn đoán khi khởi tạo thất bại. */
 static HAL_StatusTypeDef TofSensors_CheckApiStatus(VL53L0X_Error status) {
@@ -179,6 +192,7 @@ HAL_StatusTypeDef TofSensors_Init(void) {
   lastError = VL53L0X_ERROR_NONE;
   lastL1Error = 0;
   memset(distanceMm, 0, sizeof(distanceMm));
+  memset(distanceFilterInitialized, 0, sizeof(distanceFilterInitialized));
   lastInitStage = TOF_INIT_STAGE_NONE;
   lastInitSensor = TOF_SENSOR_RIGHT;
 
@@ -278,7 +292,7 @@ bool TofSensors_UpdateDistances(uint16_t *leftMm, uint16_t *midMm, uint16_t *rig
       return false;
     }
     if (measurement.RangeStatus == 0U) {
-      distanceMm[TOF_SENSOR_LEFT] = measurement.RangeMilliMeter;
+      TofSensors_UpdateFilteredDistance(TOF_SENSOR_LEFT, measurement.RangeMilliMeter);
     }
   }
 
@@ -305,7 +319,7 @@ bool TofSensors_UpdateDistances(uint16_t *leftMm, uint16_t *midMm, uint16_t *rig
       return false;
     }
     if (rangeStatus == 0U) {
-      distanceMm[TOF_SENSOR_MID] = midDistance;
+      TofSensors_UpdateFilteredDistance(TOF_SENSOR_MID, midDistance);
     }
   }
 
@@ -325,7 +339,7 @@ bool TofSensors_UpdateDistances(uint16_t *leftMm, uint16_t *midMm, uint16_t *rig
       return false;
     }
     if (measurement.RangeStatus == 0U) {
-      distanceMm[TOF_SENSOR_RIGHT] = measurement.RangeMilliMeter;
+      TofSensors_UpdateFilteredDistance(TOF_SENSOR_RIGHT, measurement.RangeMilliMeter);
     }
   }
 

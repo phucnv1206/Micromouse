@@ -50,6 +50,8 @@
 #define TOF_SENSOR_MID_I2C_ADDRESS 0x31U
 #define TOF_SENSOR_LEFT_I2C_ADDRESS 0x32U
 #define TOF_OUTER_MEASUREMENT_TIMING_BUDGET_US 25000U /* Budget trái/phải; mục tiêu khoảng 40 Hz. */
+/* Trọng số mẫu mới của low-pass ToF (1..100%); giá trị lớn phản hồi nhanh hơn. */
+#define TOF_LOWPASS_ALPHA_PERCENT 30U
 /* VL53L1X ULD chỉ hỗ trợ budget rời rạc (20 ms là mức gần 25 ms nhất). */
 #define TOF_MID_TIMING_BUDGET_MS 20U
 #define TOF_MID_INTER_MEASUREMENT_MS 25U
@@ -61,9 +63,9 @@
 /* Wheel and encoder values used by odometry. */
 #define ENCODER_COUNT_MAX 10000U
 #define ENCODER_STEPS_PER_MOTOR_REV 28U
-#define ODOMETRY_GEAR_RATIO 100.0f
-#define ODOMETRY_WHEEL_DIAMETER_MM 44.4f
-#define ODOMETRY_WHEEL_TRACK_MM 77.8f
+#define ODOMETRY_GEAR_RATIO 99.0f
+#define ODOMETRY_WHEEL_DIAMETER_MM 44.5f
+#define ODOMETRY_WHEEL_TRACK_MM 77.0f
 #define ODOMETRY_LEFT_ENCODER_SIGN -1
 #define ODOMETRY_RIGHT_ENCODER_SIGN 1
 #define ODOMETRY_INITIAL_HEADING_DEG 90.0f
@@ -184,6 +186,10 @@ void Config_USART2_GPIO_DeInit(void);
 
 #if TOF_OUTER_MEASUREMENT_TIMING_BUDGET_US < 17000U
 #error "VL53L0X timing budget must be at least 17000 microseconds"
+#endif
+
+#if TOF_LOWPASS_ALPHA_PERCENT < 1U || TOF_LOWPASS_ALPHA_PERCENT > 100U
+#error "TOF_LOWPASS_ALPHA_PERCENT must be between 1 and 100"
 #endif
 
 #if TOF_MID_TIMING_BUDGET_MS < 15U || TOF_MID_INTER_MEASUREMENT_MS < TOF_MID_TIMING_BUDGET_MS

@@ -33,11 +33,6 @@ void TIM3_IRQHandler(void) {
 #endif
 
 
-/*
- * Vòng điều khiển 100 Hz: lấy hết các frame UART đã xếp hàng, giữ lệnh hợp lệ
- * mới nhất rồi cập nhật PWM phải/trái. HAL_BUSY có nghĩa là hàng đợi đã hết;
- * lỗi nhận khác được chuyển sang Error_Handler().
- */
 
 static void readUart(void){
   UartProtocol_RxFrame rxFrame;
@@ -73,7 +68,6 @@ static void loop(void) {
 }
 
 
-
 static void debug(void) {
   
 #if ODOMETRY_ENABLED
@@ -85,6 +79,8 @@ static void debug(void) {
   debugTelemetry.data2 = 0;
   debugTelemetry.data3 = 0;
 #endif
+  // debugTelemetry.data4 = (int16_t)debugOdometryState.wheel_linear_mm_s[ENCODER_RIGHT];
+  // debugTelemetry.data5 = (int16_t)debugOdometryState.wheel_linear_mm_s[ENCODER_LEFT];
   debugTelemetry.data4 = (int16_t)debugMidDistanceMm;
   debugTelemetry.data5 = (int16_t)debugLeftDistanceMm;
   debugTelemetry.data6 = (int16_t)debugRightDistanceMm;
@@ -97,7 +93,6 @@ static void debug(void) {
 int main(void) {
   /*
    * Khởi tạo ngoại vi rồi chạy điều khiển motor và telemetry; odometry
-   * chỉ được bật khi ODOMETRY_ENABLED=1.
    */
   const uint32_t loopPeriodMs = 1000U / CONTROL_LOOP_FREQUENCY_HZ;
   const uint32_t telemetryPeriodMs = 1000U / UART_TELEMETRY_FREQUENCY_HZ;
@@ -125,7 +120,6 @@ int main(void) {
   if (Odometry_Init() != HAL_OK) {
     Error_Handler();
   }
-  /* Chỉ bật timer khi odometry được cấu hình. */
   if (Config_OdometryTimer_Init() != HAL_OK) {
     Error_Handler();
   }
@@ -136,7 +130,6 @@ int main(void) {
   if (UartProtocol_Init() != HAL_OK) {
     Error_Handler();
   }
-  /* Chỉ khởi tạo ToF và I2C khi bật cấu hình cảm biến. */
 #if TOF_ENABLED
   TofSensors_Init();
 #endif

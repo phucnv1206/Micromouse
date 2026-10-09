@@ -156,10 +156,10 @@ HAL_StatusTypeDef UartProtocol_SendTelemetry(const UartProtocol_Telemetry *telem
     return HAL_ERROR;
   }
 
-  UartProtocol_WriteInt16BE(&frame[2], telemetry->data1);
-  UartProtocol_WriteInt16BE(&frame[4], telemetry->data2);
-  UartProtocol_WriteInt16BE(&frame[6], telemetry->data3);
-  UartProtocol_WriteInt16BE(&frame[8], telemetry->data4);
+  UartProtocol_WriteInt16BE(&frame[2] , telemetry->data1);
+  UartProtocol_WriteInt16BE(&frame[4] , telemetry->data2);
+  UartProtocol_WriteInt16BE(&frame[6] , telemetry->data3);
+  UartProtocol_WriteInt16BE(&frame[8] , telemetry->data4);
   UartProtocol_WriteInt16BE(&frame[10], telemetry->data5);
   UartProtocol_WriteInt16BE(&frame[12], telemetry->data6);
   UartProtocol_WriteInt16BE(&frame[14], telemetry->data7);

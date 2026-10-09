@@ -34,7 +34,10 @@ typedef enum {
  * riêng. Hàm này blocking do API ST thực hiện các bước khởi tạo đồng bộ.
  */
 HAL_StatusTypeDef TofSensors_Init(void);
-/* Trả true khi đọc thành công; nếu ToF tắt, đặt các đầu ra về 0 và trả false. */
+/*
+ * Trả true khi đọc thành công và cung cấp khoảng cách đã lọc low-pass;
+ * nếu ToF tắt, đặt các đầu ra về 0 và trả false.
+ */
 bool TofSensors_UpdateDistances(uint16_t *leftMm, uint16_t *midMm, uint16_t *rightMm);
 /* Trả handle VL53L0X; cảm biến giữa VL53L1X không dùng handle này. */
 VL53L0X_DEV TofSensors_GetDevice(TofXshut_Sensor sensor);
