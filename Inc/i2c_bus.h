@@ -28,4 +28,24 @@ HAL_StatusTypeDef I2cBus_GetTransferStatus(void);
 /* Trả về mã lỗi chi tiết gần nhất do HAL I2C ghi nhận. */
 uint32_t I2cBus_GetErrorCode(void);
 
+/*
+ * Đăng ký hàm callback được gọi trong vòng chờ DMA hoàn tất.
+ * Dùng để xử lý odometry / MPU6050 trong khi bus I2C truyền dữ liệu ngầm,
+ * tránh để CPU thực sự rảnh rỗi trong suốt quá trình truyền.
+ * Truyền NULL để huỷ callback đã đăng ký.
+ */
+typedef void (*I2cBus_YieldFn_t)(void);
+void I2cBus_SetYieldCallback(I2cBus_YieldFn_t fn);
+
+/*
+ * Phiên bản đồng bộ của I2cBus_MemRead / I2cBus_MemWrite:
+ * Khởi động DMA, gọi yield callback liên tục trong khi chờ, rồi trả về khi
+ * giao dịch hoàn tất hoặc có lỗi.
+ * Bộ đệm data phải hợp lệ cho đến khi hàm trả về.
+ */
+HAL_StatusTypeDef I2cBus_MemReadSync(uint8_t address, uint16_t reg, uint16_t regSize,
+                                     uint8_t *data, uint16_t size);
+HAL_StatusTypeDef I2cBus_MemWriteSync(uint8_t address, uint16_t reg, uint16_t regSize,
+                                      const uint8_t *data, uint16_t size);
+
 #endif

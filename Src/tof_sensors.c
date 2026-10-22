@@ -32,12 +32,20 @@ static void TofSensors_UpdateFilteredDistance(TofXshut_Sensor sensor, uint16_t m
   if (distanceFilterInitialized[sensor] == 0U) {
     distanceMm[sensor] = measurementMm;
     distanceFilterInitialized[sensor] = 1U;
-    return;
+  } else {
+    uint32_t filtered = (uint32_t)distanceMm[sensor] * (100U - TOF_LOWPASS_ALPHA_PERCENT)
+        + (uint32_t)measurementMm * TOF_LOWPASS_ALPHA_PERCENT;
+    distanceMm[sensor] = (uint16_t)((filtered + 50U) / 100U);
   }
 
-  uint32_t filtered = (uint32_t)distanceMm[sensor] * (100U - TOF_LOWPASS_ALPHA_PERCENT)
-      + (uint32_t)measurementMm * TOF_LOWPASS_ALPHA_PERCENT;
-  distanceMm[sensor] = (uint16_t)((filtered + 50U) / 100U);
+}
+
+static bool TofSensors_ReturnResults(uint16_t *leftMm, uint16_t *midMm, uint16_t *rightMm,
+                                     bool apiSuccess) {
+  *leftMm = distanceMm[TOF_SENSOR_LEFT];
+  *midMm = distanceMm[TOF_SENSOR_MID];
+  *rightMm = distanceMm[TOF_SENSOR_RIGHT];
+  return apiSuccess;
 }
 
 /* Giữ mã lỗi API ST để bên gọi có thể chẩn đoán khi khởi tạo thất bại. */
@@ -250,8 +258,10 @@ initialization_failed:
   return HAL_ERROR;
 }
 
-bool TofSensors_UpdateDistances(uint16_t *leftMm, uint16_t *midMm, uint16_t *rightMm) {
-  if (leftMm == NULL || midMm == NULL || rightMm == NULL) {
+bool TofSensors_UpdateDistances(uint16_t *leftMm, uint16_t *midMm, uint16_t *rightMm,
+                                bool *leftValid, bool *midValid, bool *rightValid) {
+  if (leftMm == NULL || midMm == NULL || rightMm == NULL
+      || leftValid == NULL || midValid == NULL || rightValid == NULL) {
     return false;
   }
 
@@ -259,8 +269,15 @@ bool TofSensors_UpdateDistances(uint16_t *leftMm, uint16_t *midMm, uint16_t *rig
   *leftMm = 0U;
   *midMm = 0U;
   *rightMm = 0U;
+  *leftValid = false;
+  *midValid = false;
+  *rightValid = false;
   return false;
 #else
+  *leftValid = false;
+  *midValid = false;
+  *rightValid = false;
+
   VL53L0X_RangingMeasurementData_t measurement;
   VL53L0X_DEV device;
   uint8_t dataReady = 0U;
@@ -280,19 +297,20 @@ bool TofSensors_UpdateDistances(uint16_t *leftMm, uint16_t *midMm, uint16_t *rig
   device = &devices[TOF_SENSOR_LEFT].driver;
   l0Status = VL53L0X_GetMeasurementDataReady(device, &dataReady);
   if (TofSensors_CheckApiStatus(l0Status) != HAL_OK) {
-    return false;
+    return TofSensors_ReturnResults(leftMm, midMm, rightMm, false);
   }
   if (dataReady != 0U) {
     l0Status = VL53L0X_GetRangingMeasurementData(device, &measurement);
     if (TofSensors_CheckApiStatus(l0Status) != HAL_OK) {
-      return false;
+      return TofSensors_ReturnResults(leftMm, midMm, rightMm, false);
     }
     l0Status = VL53L0X_ClearInterruptMask(device, 0U);
     if (TofSensors_CheckApiStatus(l0Status) != HAL_OK) {
-      return false;
+      return TofSensors_ReturnResults(leftMm, midMm, rightMm, false);
     }
     if (measurement.RangeStatus == 0U) {
       TofSensors_UpdateFilteredDistance(TOF_SENSOR_LEFT, measurement.RangeMilliMeter);
+      *leftValid = true;
     }
   }
 
@@ -300,26 +318,27 @@ bool TofSensors_UpdateDistances(uint16_t *leftMm, uint16_t *midMm, uint16_t *rig
   lastL1Error = VL53L1X_CheckForDataReady(
       (uint16_t)(TOF_SENSOR_MID_I2C_ADDRESS << 1U), &dataReady);
   if (lastL1Error != 0) {
-    return false;
+    return TofSensors_ReturnResults(leftMm, midMm, rightMm, false);
   }
   if (dataReady != 0U) {
     lastL1Error = VL53L1X_GetRangeStatus(
         (uint16_t)(TOF_SENSOR_MID_I2C_ADDRESS << 1U), &rangeStatus);
     if (lastL1Error != 0) {
-      return false;
+      return TofSensors_ReturnResults(leftMm, midMm, rightMm, false);
     }
     lastL1Error = VL53L1X_GetDistance(
         (uint16_t)(TOF_SENSOR_MID_I2C_ADDRESS << 1U), &midDistance);
     if (lastL1Error != 0) {
-      return false;
+      return TofSensors_ReturnResults(leftMm, midMm, rightMm, false);
     }
     lastL1Error = VL53L1X_ClearInterrupt(
         (uint16_t)(TOF_SENSOR_MID_I2C_ADDRESS << 1U));
     if (lastL1Error != 0) {
-      return false;
+      return TofSensors_ReturnResults(leftMm, midMm, rightMm, false);
     }
     if (rangeStatus == 0U) {
       TofSensors_UpdateFilteredDistance(TOF_SENSOR_MID, midDistance);
+      *midValid = true;
     }
   }
 
@@ -327,26 +346,24 @@ bool TofSensors_UpdateDistances(uint16_t *leftMm, uint16_t *midMm, uint16_t *rig
   dataReady = 0U;
   l0Status = VL53L0X_GetMeasurementDataReady(device, &dataReady);
   if (TofSensors_CheckApiStatus(l0Status) != HAL_OK) {
-    return false;
+    return TofSensors_ReturnResults(leftMm, midMm, rightMm, false);
   }
   if (dataReady != 0U) {
     l0Status = VL53L0X_GetRangingMeasurementData(device, &measurement);
     if (TofSensors_CheckApiStatus(l0Status) != HAL_OK) {
-      return false;
+      return TofSensors_ReturnResults(leftMm, midMm, rightMm, false);
     }
     l0Status = VL53L0X_ClearInterruptMask(device, 0U);
     if (TofSensors_CheckApiStatus(l0Status) != HAL_OK) {
-      return false;
+      return TofSensors_ReturnResults(leftMm, midMm, rightMm, false);
     }
     if (measurement.RangeStatus == 0U) {
       TofSensors_UpdateFilteredDistance(TOF_SENSOR_RIGHT, measurement.RangeMilliMeter);
+      *rightValid = true;
     }
   }
 
-  *leftMm = distanceMm[TOF_SENSOR_LEFT];
-  *midMm = distanceMm[TOF_SENSOR_MID];
-  *rightMm = distanceMm[TOF_SENSOR_RIGHT];
-  return true;
+  return TofSensors_ReturnResults(leftMm, midMm, rightMm, true);
 #endif
 }
 

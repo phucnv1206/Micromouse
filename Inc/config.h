@@ -15,6 +15,9 @@
 #ifndef TOF_ENABLED
 #define TOF_ENABLED 1U
 #endif
+#ifndef MPU6050_ENABLED
+#define MPU6050_ENABLED 0U
+#endif
 
 #define ODOMETRY_UPDATE_FREQUENCY_HZ 1000U
 #define ODOMETRY_TIMER_COUNTER_HZ 1000000U
@@ -59,6 +62,25 @@
 #define TOF_XSHUT_RESET_DELAY_MS 2U
 #define TOF_SENSOR_BOOT_DELAY_MS 10U
 #define TOF_SENSOR_INTER_INIT_DELAY_MS 100U
+
+/* ── MPU6050 ─────────────────────────────────────────────────────────────────
+ * MPU6050 dùng I2C2 riêng để không xung đột bus I2C1 của ToF VL53L0X/L1X.
+ * STM32F401RCT6 LQFP64 - I2C2 pin mapping (xác nhận từ CubeMX):
+ *   PB10 = I2C2_SCL  (AF4)
+ *   PB3  = I2C2_SDA  (AF9)  ← AF khác với SCL, cần cấu hình riêng
+ * Địa chỉ I2C 7-bit (AD0 nối GND → 0x68, nối VCC → 0x69).
+ * Gyro full-scale range: 250 | 500 | 1000 | 2000 (°/s).
+ * Alpha low-pass IIR: 1..100 (%). Giá trị nhỏ làm mượt mạnh, lớn phản hồi nhanh.
+ * ──────────────────────────────────────────────────────────────────────────── */
+#define MPU6050_SCL                      GPIO_PIN_10
+#define MPU6050_SCL_Port                 GPIOB
+#define MPU6050_SCL_AF                   GPIO_AF4_I2C2
+#define MPU6050_SDA                      GPIO_PIN_3
+#define MPU6050_SDA_Port                 GPIOB
+#define MPU6050_SDA_AF                   GPIO_AF9_I2C2
+#define MPU6050_I2C_ADDRESS              0x68U
+#define MPU6050_GYRO_FULL_SCALE_DPS      250
+#define MPU6050_GYRO_LOWPASS_ALPHA_PERCENT 20U
 
 /* Wheel and encoder values used by odometry. */
 #define ENCODER_COUNT_MAX 10000U
@@ -115,6 +137,7 @@
 
 void Config_Init(void);
 HAL_StatusTypeDef Config_I2C1_Init(void);
+HAL_StatusTypeDef Config_I2C2_Init(void);
 HAL_StatusTypeDef Config_OdometryTimer_Init(void);
 void Config_OdometryTimer_Start(void);
 void Config_I2C1_GPIO_Init(void);
@@ -194,6 +217,14 @@ void Config_USART2_GPIO_DeInit(void);
 
 #if TOF_MID_TIMING_BUDGET_MS < 15U || TOF_MID_INTER_MEASUREMENT_MS < TOF_MID_TIMING_BUDGET_MS
 #error "VL53L1X needs a supported timing budget and an inter-measurement period at least as long"
+#endif
+
+#if MPU6050_GYRO_LOWPASS_ALPHA_PERCENT < 1U || MPU6050_GYRO_LOWPASS_ALPHA_PERCENT > 100U
+#error "MPU6050_GYRO_LOWPASS_ALPHA_PERCENT must be between 1 and 100"
+#endif
+
+#if MPU6050_I2C_ADDRESS < 0x08U || MPU6050_I2C_ADDRESS > 0x77U
+#error "MPU6050_I2C_ADDRESS must be a valid 7-bit I2C address (0x08..0x77)"
 #endif
 
 #endif /* MICROMOUSE_CONFIG_H */

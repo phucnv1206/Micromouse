@@ -6,6 +6,9 @@
 #include "led.h"
 #include "button.h"
 #include "tof_sensors.h"
+#include "mpu6050.h"
+#include "i2c_bus.h"
+
 
 
 /* Tổng chu kỳ CPU bận trong cửa sổ tải hiện tại; thời gian ngủ WFI không tính. */
@@ -18,6 +21,9 @@ static Odometry_State debugOdometryState;
 static uint16_t debugLeftDistanceMm;
 static uint16_t debugMidDistanceMm;
 static uint16_t debugRightDistanceMm;
+static bool LeftValid;
+static bool MidValid;
+static bool RightValid;
 #if ODOMETRY_ENABLED
 /* Cờ báo timer odometry vừa đến hạn; volatile vì được cập nhật trong ngắt TIM3. */
 static volatile uint8_t odometryUpdatePending;
@@ -28,6 +34,33 @@ void TIM3_IRQHandler(void) {
     TIM3->SR &= ~TIM_SR_UIF;
     /* Vòng chính đọc và xóa cờ này rồi mới thực hiện Odometry_Update(). */
     odometryUpdatePending = 1U;
+  }
+}
+
+/*
+ * Yield callback đăng ký với I2cBus: được gọi trong vòng chờ DMA của ToF.
+ * Nếu TIM3 đã đặt cờ odometry trong lúc DMA đang chạy, hàm này xử lý ngay
+ * thay vì để odometry bị trễ cho đến khi I2C hoàn tất.
+ * Không dùng taskRan vì đây là ngữ cảnh yield, không phải vòng lặp chính.
+ */
+static void I2cYield_ProcessOdometry(void) {
+  uint32_t primask = __get_PRIMASK();
+  uint8_t due = 0U;
+  __disable_irq();
+  if (odometryUpdatePending != 0U) {
+    odometryUpdatePending = 0U;
+    due = 1U;
+  }
+  if (primask == 0U) {
+    __enable_irq();
+  }
+  if (due != 0U) {
+    if (Odometry_Update() != HAL_OK) {
+      Error_Handler();
+    }
+    if (Mpu6050_Update() != HAL_OK) {
+      Error_Handler();
+    }
   }
 }
 #endif
@@ -83,7 +116,10 @@ static void debug(void) {
   // debugTelemetry.data5 = (int16_t)debugOdometryState.wheel_linear_mm_s[ENCODER_LEFT];
   debugTelemetry.data4 = (int16_t)debugMidDistanceMm;
   debugTelemetry.data5 = (int16_t)debugLeftDistanceMm;
+  // debugTelemetry.data4 = (int16_t)debugLeftDistanceMm;
+  // debugTelemetry.data5 = (int16_t)LeftValid;
   debugTelemetry.data6 = (int16_t)debugRightDistanceMm;
+  // debugTelemetry.data7 = (int16_t)RightValid;
   debugTelemetry.data7 = (int16_t)cpuLoadTenthsPercent;
 }
 
@@ -123,7 +159,11 @@ int main(void) {
   if (Config_OdometryTimer_Init() != HAL_OK) {
     Error_Handler();
   }
+  I2cBus_SetYieldCallback(I2cYield_ProcessOdometry);
 #endif
+  if (Mpu6050_Init() != HAL_OK) {
+    Error_Handler();
+  }
   if (MotorPwm_Init() != HAL_OK) {
     Error_Handler();
   }
@@ -185,6 +225,10 @@ int main(void) {
       if (Odometry_Update() != HAL_OK) {
         Error_Handler();
       }
+      /* Cập nhật MPU6050 cùng nhịp odometry 1000 Hz để bộ lọc hoạt động đúng. */
+      if (Mpu6050_Update() != HAL_OK) {
+        Error_Handler();
+      }
       taskRan = 1U;
     }
 #endif
@@ -208,8 +252,7 @@ int main(void) {
       }
 #endif
 #if TOF_ENABLED
-      if (!TofSensors_UpdateDistances(&debugLeftDistanceMm, &debugMidDistanceMm,
-                                      &debugRightDistanceMm)) {
+      if (!TofSensors_UpdateDistances(&debugLeftDistanceMm, &debugMidDistanceMm, &debugRightDistanceMm, &LeftValid, &MidValid, &RightValid)) {
         Error_Handler();
       }
 #endif

@@ -1,5 +1,15 @@
 #include "main.h"
 #include "vl53l0x_api.h"
+#include "i2c_bus.h"
+
+/*
+ * Port layer VL53L0X cho STM32F4 — dùng I2cBus_MemReadSync / MemWriteSync.
+ * Các hàm này khởi động DMA rồi chờ hoàn tất với yield callback, cho phép
+ * odometry chạy trong lúc bus I2C đang truyền dữ liệu.
+ *
+ * Địa chỉ trong driver ST là 8-bit (7-bit << 1); I2cBus nhận 7-bit,
+ * nên luôn dịch phải 1 bit khi gọi I2cBus API.
+ */
 
 static VL53L0X_Error Vl53l0xPort_MapHalStatus(HAL_StatusTypeDef status) {
   return status == HAL_OK ? VL53L0X_ERROR_NONE : VL53L0X_ERROR_CONTROL_INTERFACE;
@@ -18,7 +28,9 @@ VL53L0X_Error VL53L0X_WriteMulti(VL53L0X_DEV device, uint8_t index, uint8_t *dat
     return VL53L0X_ERROR_INVALID_PARAMS;
   }
 
-  return Vl53l0xPort_MapHalStatus(HAL_I2C_Mem_Write(device->I2cHandle, device->I2cDevAddr, index, I2C_MEMADD_SIZE_8BIT, data, (uint16_t)count, I2C_TIMEOUT_MS));
+  return Vl53l0xPort_MapHalStatus(
+      I2cBus_MemWriteSync(device->I2cDevAddr >> 1U, index, I2C_MEMADD_SIZE_8BIT,
+                          data, (uint16_t)count));
 }
 
 VL53L0X_Error VL53L0X_ReadMulti(VL53L0X_DEV device, uint8_t index, uint8_t *data, uint32_t count) {
@@ -26,7 +38,9 @@ VL53L0X_Error VL53L0X_ReadMulti(VL53L0X_DEV device, uint8_t index, uint8_t *data
     return VL53L0X_ERROR_INVALID_PARAMS;
   }
 
-  return Vl53l0xPort_MapHalStatus(HAL_I2C_Mem_Read(device->I2cHandle, device->I2cDevAddr, index, I2C_MEMADD_SIZE_8BIT, data, (uint16_t)count, I2C_TIMEOUT_MS));
+  return Vl53l0xPort_MapHalStatus(
+      I2cBus_MemReadSync(device->I2cDevAddr >> 1U, index, I2C_MEMADD_SIZE_8BIT,
+                         data, (uint16_t)count));
 }
 
 VL53L0X_Error VL53L0X_WrByte(VL53L0X_DEV device, uint8_t index, uint8_t data) {

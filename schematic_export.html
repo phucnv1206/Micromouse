@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Sơ Đồ Nguyên Lý Mạch Điện Micromouse STM32F401</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: #0b1120;
+      color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      padding: 24px;
+      display: flex;
+      justify-content: center;
+    }
+    .card {
+      background-color: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 16px;
+      padding: 24px;
+      width: 1220px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #1e293b;
+      padding-bottom: 16px;
+      margin-bottom: 20px;
+    }
+    .title {
+      font-size: 24px;
+      font-weight: 700;
+      color: #f8fafc;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+    .badge-group { display: flex; gap: 8px; }
+    .badge {
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge-green { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-blue { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      background: #090d16;
+      border: 1px solid #1e293b;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      margin-bottom: 16px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .legend-bar { width: 14px; height: 4px; border-radius: 2px; }
+    .svg-container {
+      background: #050811;
+      border-radius: 12px;
+      border: 1px solid #1e293b;
+      padding: 12px;
+    }
+    .pin-label { font-size: 11px; font-family: "Courier New", monospace; font-weight: bold; }
+    .ic-box { rx: 8; stroke-width: 2; }
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 20px;
+    }
+    .info-card {
+      background: #090d16;
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      padding: 14px;
+      font-size: 12.5px;
+      line-height: 1.6;
+    }
+    .info-title {
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .info-list { list-style: none; color: #94a3b8; }
+    .info-list li { margin-bottom: 4px; }
+    .info-list strong { color: #cbd5e1; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div>
+        <div class="title"><span>⚡</span> SƠ ĐỒ NGUYÊN LÝ MẠCH ĐIỆN MICROMOUSE STM32F401</div>
+        <div class="subtitle">Kiến trúc 2 Bus I2C độc lập: I2C1 (3 Cảm biến ToF + DMA) & I2C2 (MPU6050 1000Hz) • EXTI Quadrature Encoders</div>
+      </div>
+      <div class="badge-group">
+        <span class="badge badge-green">● Logic 3.3V</span>
+        <span class="badge badge-blue">STM32F401RCT6 (LQFP64)</span>
+      </div>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><span class="legend-bar" style="background:#ef4444"></span> VCC (+3.3V)</div>
+      <div class="legend-item"><span class="legend-bar" style="background:#64748b"></span> GND (Mass chung)</div>
+      <div class="legend-item"><span class="legend-bar" style="background:#3b82f6"></span> Bus I2C1 (PB6 SCL / PB7 SDA)</div>
+      <div class="legend-item"><span class="legend-bar" style="background:#a855f7"></span> Bus I2C2 (PB10 SCL / PB3 SDA)</div>
+      <div class="legend-item"><span class="legend-bar" style="background:#22c55e"></span> Encoders (EXTI11/12, EXTI4/5)</div>
+      <div class="legend-item"><span class="legend-bar" style="background:#f97316"></span> Motor PWM (TIM1_CH1, TIM11_CH1)</div>
+      <div class="legend-item"><span class="legend-bar" style="background:#06b6d4"></span> UART Telemetry (PA2/PA3)</div>
+    </div>
+
+    <div class="svg-container">
+      <svg viewBox="0 0 1150 770" width="1150" height="770" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#111827" stroke-width="0.8"/>
+          </pattern>
+        </defs>
+        <rect width="1150" height="770" fill="url(#grid)" />
+
+        <!-- Nguồn Power Rail -->
+        <line x1="30" y1="35" x2="1120" y2="35" stroke="#ef4444" stroke-width="3" stroke-dasharray="8,4" />
+        <text x="35" y="26" fill="#ef4444" font-size="11" font-family="monospace" font-weight="bold">+3.3V VCC POWER RAIL</text>
+        
+        <line x1="30" y1="745" x2="1120" y2="745" stroke="#64748b" stroke-width="3" />
+        <text x="35" y="736" fill="#94a3b8" font-size="11" font-family="monospace" font-weight="bold">COMMON GND RAIL</text>
+
+        <!-- MCU BLOCK TRUNG TÂM -->
+        <g id="mcu">
+          <rect x="420" y="145" width="310" height="500" class="ic-box" fill="#1e293b" stroke="#38bdf8" />
+          <rect x="420" y="145" width="310" height="38" rx="8" fill="#0284c7" />
+          <text x="575" y="169" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle">STM32F401RCT6 (MCU)</text>
+
+          <!-- Trái MCU -->
+          <text x="430" y="220" class="pin-label" fill="#cbd5e1">PA0 (BUTTON 1)</text>
+          <circle cx="420" cy="216" r="3.5" fill="#38bdf8"/>
+          
+          <text x="430" y="255" class="pin-label" fill="#cbd5e1">PA1 (BUTTON 2)</text>
+          <circle cx="420" cy="251" r="3.5" fill="#38bdf8"/>
+
+          <text x="430" y="300" class="pin-label" fill="#38bdf8">PA2 (USART2_TX)</text>
+          <circle cx="420" cy="296" r="3.5" fill="#06b6d4"/>
+          <text x="430" y="330" class="pin-label" fill="#38bdf8">PA3 (USART2_RX)</text>
+          <circle cx="420" cy="326" r="3.5" fill="#06b6d4"/>
+
+          <text x="430" y="380" class="pin-label" fill="#4ade80">PA12 (R_ENC_A EXTI12)</text>
+          <circle cx="420" cy="376" r="3.5" fill="#22c55e"/>
+          <text x="430" y="410" class="pin-label" fill="#4ade80">PA11 (R_ENC_B EXTI11)</text>
+          <circle cx="420" cy="406" r="3.5" fill="#22c55e"/>
+
+          <text x="430" y="460" class="pin-label" fill="#4ade80">PB4 (L_ENC_A EXTI4)</text>
+          <circle cx="420" cy="456" r="3.5" fill="#22c55e"/>
+          <text x="430" y="490" class="pin-label" fill="#4ade80">PB5 (L_ENC_B EXTI5)</text>
+          <circle cx="420" cy="486" r="3.5" fill="#22c55e"/>
+
+          <text x="430" y="540" class="pin-label" fill="#fbbf24">PC13 (STATUS_LED1)</text>
+          <circle cx="420" cy="536" r="3.5" fill="#eab308"/>
+          <text x="430" y="570" class="pin-label" fill="#fbbf24">PC14 (STATUS_LED2)</text>
+          <circle cx="420" cy="566" r="3.5" fill="#eab308"/>
+          <text x="430" y="600" class="pin-label" fill="#fbbf24">PC15 (STATUS_LED3)</text>
+          <circle cx="420" cy="596" r="3.5" fill="#eab308"/>
+
+          <!-- Phải MCU -->
+          <text x="720" y="220" class="pin-label" fill="#fb923c" text-anchor="end">PA8 (TIM1_CH1 PWM_R)</text>
+          <circle cx="730" cy="216" r="3.5" fill="#f97316"/>
+          <text x="720" y="255" class="pin-label" fill="#fb923c" text-anchor="end">PB9 (TIM11_CH1 PWM_L)</text>
+          <circle cx="730" cy="251" r="3.5" fill="#f97316"/>
+
+          <text x="720" y="310" class="pin-label" fill="#60a5fa" text-anchor="end">PB6 (I2C1_SCL)</text>
+          <circle cx="730" cy="306" r="3.5" fill="#3b82f6"/>
+          <text x="720" y="340" class="pin-label" fill="#60a5fa" text-anchor="end">PB7 (I2C1_SDA)</text>
+          <circle cx="730" cy="336" r="3.5" fill="#3b82f6"/>
+
+          <text x="720" y="390" class="pin-label" fill="#93c5fd" text-anchor="end">PB15 (XSHUT_LEFT)</text>
+          <circle cx="730" cy="386" r="3.5" fill="#60a5fa"/>
+          <text x="720" y="420" class="pin-label" fill="#93c5fd" text-anchor="end">PB14 (XSHUT_MID)</text>
+          <circle cx="730" cy="416" r="3.5" fill="#60a5fa"/>
+          <text x="720" y="450" class="pin-label" fill="#93c5fd" text-anchor="end">PB13 (XSHUT_RIGHT)</text>
+          <circle cx="730" cy="446" r="3.5" fill="#60a5fa"/>
+
+          <text x="720" y="510" class="pin-label" fill="#c084fc" text-anchor="end">PB10 (I2C2_SCL AF4)</text>
+          <circle cx="730" cy="506" r="3.5" fill="#a855f7"/>
+          <text x="720" y="540" class="pin-label" fill="#c084fc" text-anchor="end">PB3 (I2C2_SDA AF9)</text>
+          <circle cx="730" cy="536" r="3.5" fill="#a855f7"/>
+
+          <!-- Nguồn MCU -->
+          <line x1="575" y1="145" x2="575" y2="35" stroke="#ef4444" stroke-width="2"/>
+          <circle cx="575" cy="35" r="3" fill="#ef4444"/>
+          <text x="568" y="135" fill="#fca5a5" font-size="10" font-family="monospace">VDD (3.3V)</text>
+
+          <line x1="575" y1="645" x2="575" y2="745" stroke="#64748b" stroke-width="2"/>
+          <circle cx="575" cy="745" r="3" fill="#64748b"/>
+          <text x="568" y="660" fill="#94a3b8" font-size="10" font-family="monospace">VSS (GND)</text>
+        </g>
+
+        <!-- KHỐI DRIVER MOTOR -->
+        <g id="motors">
+          <rect x="940" y="180" width="165" height="65" rx="6" fill="#1e293b" stroke="#f97316" stroke-width="1.5"/>
+          <text x="1022" y="200" fill="#f97316" font-size="11" font-weight="bold" text-anchor="middle">MOTOR RIGHT DRIVER</text>
+          <text x="948" y="222" class="pin-label" fill="#fdba74">PWM IN</text>
+          <text x="948" y="238" class="pin-label" fill="#94a3b8">GND</text>
+          <line x1="730" y1="216" x2="940" y2="216" stroke="#f97316" stroke-width="2"/>
+          <line x1="1040" y1="238" x2="1040" y2="745" stroke="#64748b" stroke-width="1.5"/>
+
+          <rect x="940" y="260" width="165" height="65" rx="6" fill="#1e293b" stroke="#f97316" stroke-width="1.5"/>
+          <text x="1022" y="280" fill="#f97316" font-size="11" font-weight="bold" text-anchor="middle">MOTOR LEFT DRIVER</text>
+          <text x="948" y="302" class="pin-label" fill="#fdba74">PWM IN</text>
+          <text x="948" y="318" class="pin-label" fill="#94a3b8">GND</text>
+          <path d="M 730 251 L 880 251 L 880 302 L 940 302" stroke="#f97316" stroke-width="2" fill="none"/>
+          <line x1="1060" y1="318" x2="1060" y2="745" stroke="#64748b" stroke-width="1.5"/>
+        </g>
+
+        <!-- KHỐI BUS I2C1 (ToF) -->
+        <g id="i2c1">
+          <line x1="730" y1="306" x2="795" y2="306" stroke="#3b82f6" stroke-width="2"/>
+          <line x1="730" y1="336" x2="815" y2="336" stroke="#60a5fa" stroke-width="2"/>
+
+          <line x1="795" y1="75" x2="795" y2="495" stroke="#3b82f6" stroke-width="2"/>
+          <text x="790" y="70" fill="#60a5fa" font-size="10" font-weight="bold">I2C1_SCL</text>
+          <line x1="815" y1="75" x2="815" y2="495" stroke="#60a5fa" stroke-width="2"/>
+          <text x="820" y="70" fill="#93c5fd" font-size="10" font-weight="bold">I2C1_SDA</text>
+
+          <!-- Pull-up R1, R2 -->
+          <rect x="788" y="42" width="14" height="24" fill="#334155" stroke="#cbd5e1"/>
+          <text x="750" y="58" fill="#cbd5e1" font-size="9">R1:4.7k</text>
+          <line x1="795" y1="35" x2="795" y2="42" stroke="#ef4444" stroke-width="1.5"/>
+          <line x1="795" y1="66" x2="795" y2="75" stroke="#3b82f6" stroke-width="1.5"/>
+          <circle cx="795" cy="35" r="2.5" fill="#ef4444"/>
+
+          <rect x="808" y="42" width="14" height="24" fill="#334155" stroke="#cbd5e1"/>
+          <text x="826" y="58" fill="#cbd5e1" font-size="9">R2:4.7k</text>
+          <line x1="815" y1="35" x2="815" y2="42" stroke="#ef4444" stroke-width="1.5"/>
+          <line x1="815" y1="66" x2="815" y2="75" stroke="#60a5fa" stroke-width="1.5"/>
+          <circle cx="815" cy="35" r="2.5" fill="#ef4444"/>
+
+          <!-- 3 ToF Sensors -->
+          <rect x="940" y="345" width="175" height="52" rx="6" fill="#1e293b" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="1027" y="362" fill="#60a5fa" font-size="10.5" font-weight="bold" text-anchor="middle">VL53L0X LEFT (0x32)</text>
+          <text x="948" y="385" class="pin-label" fill="#93c5fd">SCL SDA XSHUT GND</text>
+          <line x1="795" y1="380" x2="940" y2="380" stroke="#3b82f6" stroke-width="1.5"/>
+          <circle cx="795" cy="380" r="2.5" fill="#3b82f6"/>
+          <path d="M 730 386 L 910 386 L 910 392 L 940 392" stroke="#60a5fa" stroke-width="1.5" fill="none"/>
+
+          <rect x="940" y="415" width="175" height="52" rx="6" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5"/>
+          <text x="1027" y="432" fill="#38bdf8" font-size="10.5" font-weight="bold" text-anchor="middle">VL53L1X MID (0x31)</text>
+          <text x="948" y="455" class="pin-label" fill="#bae6fd">SCL SDA XSHUT GND</text>
+          <line x1="795" y1="450" x2="940" y2="450" stroke="#3b82f6" stroke-width="1.5"/>
+          <circle cx="795" cy="450" r="2.5" fill="#3b82f6"/>
+          <path d="M 730 416 L 880 416 L 880 460 L 940 460" stroke="#38bdf8" stroke-width="1.5" fill="none"/>
+
+          <rect x="940" y="485" width="175" height="52" rx="6" fill="#1e293b" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="1027" y="502" fill="#60a5fa" font-size="10.5" font-weight="bold" text-anchor="middle">VL53L0X RIGHT (0x30)</text>
+          <text x="948" y="525" class="pin-label" fill="#93c5fd">SCL SDA XSHUT GND</text>
+          <line x1="795" y1="520" x2="940" y2="520" stroke="#3b82f6" stroke-width="1.5"/>
+          <circle cx="795" cy="520" r="2.5" fill="#3b82f6"/>
+          <path d="M 730 446 L 860 446 L 860 530 L 940 530" stroke="#60a5fa" stroke-width="1.5" fill="none"/>
+        </g>
+
+        <!-- KHỐI BUS I2C2 (MPU6050) -->
+        <g id="mpu">
+          <rect x="940" y="565" width="175" height="95" rx="6" fill="#1e293b" stroke="#a855f7" stroke-width="2"/>
+          <text x="1027" y="585" fill="#c084fc" font-size="11.5" font-weight="bold" text-anchor="middle">MPU6050 (GYRO Z)</text>
+          <text x="948" y="605" class="pin-label" fill="#e9d5ff">SCL (Chân PB10)</text>
+          <text x="948" y="623" class="pin-label" fill="#e9d5ff">SDA (Chân PB3)</text>
+          <text x="948" y="642" class="pin-label" fill="#fca5a5">AD0 → GND (0x68)</text>
+
+          <path d="M 730 506 L 850 506 L 850 600 L 940 600" stroke="#a855f7" stroke-width="2" fill="none"/>
+          <path d="M 730 536 L 830 536 L 830 618 L 940 618" stroke="#c084fc" stroke-width="2" fill="none"/>
+
+          <!-- Pull-up R3, R4 -->
+          <rect x="843" y="540" width="14" height="24" fill="#334155" stroke="#cbd5e1"/>
+          <line x1="850" y1="506" x2="850" y2="540" stroke="#a855f7"/>
+          <line x1="850" y1="564" x2="850" y2="600" stroke="#a855f7"/>
+          <text x="862" y="555" fill="#cbd5e1" font-size="8">R3:4.7k</text>
+
+          <rect x="823" y="540" width="14" height="24" fill="#334155" stroke="#cbd5e1"/>
+          <text x="788" y="555" fill="#cbd5e1" font-size="8">R4:4.7k</text>
+
+          <line x1="1040" y1="660" x2="1040" y2="745" stroke="#64748b" stroke-width="1.5"/>
+          <circle cx="1040" cy="745" r="2.5" fill="#64748b"/>
+        </g>
+
+        <!-- KHỐI ENCODER (Bên Trái) -->
+        <g id="encoders">
+          <rect x="60" y="360" width="230" height="65" rx="6" fill="#1e293b" stroke="#22c55e" stroke-width="1.5"/>
+          <text x="175" y="380" fill="#4ade80" font-size="11" font-weight="bold" text-anchor="middle">ENCODER BÁNH PHẢI</text>
+          <text x="280" y="400" class="pin-label" fill="#86efac" text-anchor="end">PHA A (PA12)</text>
+          <text x="280" y="418" class="pin-label" fill="#86efac" text-anchor="end">PHA B (PA11)</text>
+          <line x1="290" y1="376" x2="420" y2="376" stroke="#22c55e" stroke-width="2"/>
+          <line x1="290" y1="406" x2="420" y2="406" stroke="#22c55e" stroke-width="2"/>
+
+          <rect x="60" y="445" width="230" height="65" rx="6" fill="#1e293b" stroke="#22c55e" stroke-width="1.5"/>
+          <text x="175" y="465" fill="#4ade80" font-size="11" font-weight="bold" text-anchor="middle">ENCODER BÁNH TRÁI</text>
+          <text x="280" y="485" class="pin-label" fill="#86efac" text-anchor="end">PHA A (PB4)</text>
+          <text x="280" y="503" class="pin-label" fill="#86efac" text-anchor="end">PHA B (PB5)</text>
+          <line x1="290" y1="456" x2="420" y2="456" stroke="#22c55e" stroke-width="2"/>
+          <line x1="290" y1="486" x2="420" y2="486" stroke="#22c55e" stroke-width="2"/>
+        </g>
+
+        <!-- KHỐI BUTTONS (Trái Trên) -->
+        <g id="buttons">
+          <text x="175" y="200" fill="#94a3b8" font-size="10.5" font-weight="bold">BUTTONS (Pull-up nội)</text>
+          <line x1="420" y1="216" x2="270" y2="216" stroke="#38bdf8" stroke-width="2"/>
+          <circle cx="270" cy="216" r="3" fill="#38bdf8"/>
+          <line x1="250" y1="216" x2="270" y2="210" stroke="#cbd5e1" stroke-width="2"/>
+          <circle cx="245" cy="216" r="3" fill="#64748b"/>
+          <line x1="245" y1="216" x2="245" y2="235" stroke="#64748b" stroke-width="1.5"/>
+          <text x="260" y="202" fill="#e2e8f0" font-size="9.5">SW1 (PA0)</text>
+
+          <line x1="420" y1="251" x2="270" y2="251" stroke="#38bdf8" stroke-width="2"/>
+          <circle cx="270" cy="251" r="3" fill="#38bdf8"/>
+          <line x1="250" y1="251" x2="270" y2="245" stroke="#cbd5e1" stroke-width="2"/>
+          <circle cx="245" cy="251" r="3" fill="#64748b"/>
+          <line x1="245" y1="251" x2="245" y2="260" stroke="#64748b" stroke-width="1.5"/>
+          <text x="260" y="240" fill="#e2e8f0" font-size="9.5">SW2 (PA1)</text>
+
+          <line x1="245" y1="235" x2="245" y2="745" stroke="#64748b" stroke-width="1.5"/>
+        </g>
+
+        <!-- KHỐI LED (Trái Dưới) -->
+        <g id="leds">
+          <text x="175" y="540" fill="#eab308" font-size="10.5" font-weight="bold">3x STATUS LEDS</text>
+          
+          <line x1="420" y1="536" x2="295" y2="536" stroke="#eab308" stroke-width="1.5"/>
+          <rect x="265" y="530" width="22" height="12" fill="#334155" stroke="#cbd5e1"/>
+          <text x="267" y="539" fill="#cbd5e1" font-size="8">330Ω</text>
+          <line x1="265" y1="536" x2="240" y2="536" stroke="#eab308" stroke-width="1.5"/>
+          <polygon points="240,530 240,542 225,536" fill="#eab308"/>
+          <line x1="225" y1="530" x2="225" y2="542" stroke="#eab308" stroke-width="2"/>
+          <line x1="225" y1="536" x2="210" y2="536" stroke="#64748b" stroke-width="1.5"/>
+
+          <line x1="420" y1="566" x2="295" y2="566" stroke="#eab308" stroke-width="1.5"/>
+          <rect x="265" y="560" width="22" height="12" fill="#334155" stroke="#cbd5e1"/>
+          <text x="267" y="569" fill="#cbd5e1" font-size="8">330Ω</text>
+          <line x1="265" y1="566" x2="240" y2="566" stroke="#eab308" stroke-width="1.5"/>
+          <polygon points="240,560 240,572 225,566" fill="#eab308"/>
+          <line x1="225" y1="560" x2="225" y2="572" stroke="#eab308" stroke-width="2"/>
+          <line x1="225" y1="566" x2="210" y2="566" stroke="#64748b" stroke-width="1.5"/>
+
+          <line x1="420" y1="596" x2="295" y2="596" stroke="#eab308" stroke-width="1.5"/>
+          <rect x="265" y="590" width="22" height="12" fill="#334155" stroke="#cbd5e1"/>
+          <text x="267" y="599" fill="#cbd5e1" font-size="8">330Ω</text>
+          <line x1="265" y1="596" x2="240" y2="596" stroke="#eab308" stroke-width="1.5"/>
+          <polygon points="240,590 240,602 225,596" fill="#eab308"/>
+          <line x1="225" y1="590" x2="225" y2="602" stroke="#eab308" stroke-width="2"/>
+          <line x1="225" y1="596" x2="210" y2="596" stroke="#64748b" stroke-width="1.5"/>
+
+          <line x1="210" y1="536" x2="210" y2="745" stroke="#64748b" stroke-width="1.5"/>
+        </g>
+
+        <!-- KHỐI UART -->
+        <g id="uart">
+          <rect x="60" y="285" width="230" height="55" rx="6" fill="#1e293b" stroke="#06b6d4" stroke-width="1.5"/>
+          <text x="175" y="305" fill="#22d3ee" font-size="11" font-weight="bold" text-anchor="middle">USB-UART CH340 / CP2102</text>
+          <text x="280" y="325" class="pin-label" fill="#a5f3fc" text-anchor="end">RX TX GND</text>
+          <path d="M 420 296 L 340 296 L 340 315 L 290 315" stroke="#06b6d4" stroke-width="2" fill="none"/>
+          <path d="M 420 326 L 350 326 L 350 332 L 290 332" stroke="#22d3ee" stroke-width="2" fill="none"/>
+        </g>
+      </svg>
+    </div>
+
+    <div class="info-grid">
+      <div class="info-card">
+        <div class="info-title"><span>🔌</span> Điện Trở Phụ Trợ & Cấu Hình Chân</div>
+        <ul class="info-list">
+          <li>• <strong>R1, R2 (4.7kΩ):</strong> Điện trở kéo lên (Pull-up) cho Bus I2C1 (PB6, PB7) lên 3.3V.</li>
+          <li>• <strong>R3, R4 (4.7kΩ):</strong> Điện trở kéo lên (Pull-up) cho Bus I2C2 (PB10, PB3) lên 3.3V.</li>
+          <li>• <strong>330Ω × 3:</strong> Trở hạn dòng mắc nối tiếp trước Anode của 3 đèn LED báo trạng thái.</li>
+          <li>• <strong>PA0, PA1:</strong> Nút bấm nối trực tiếp xuống GND (dùng điện trở Pull-up nội bên trong MCU).</li>
+        </ul>
+      </div>
+      <div class="info-card">
+        <div class="info-title"><span>⚠️</span> Quy Chuẩn Đấu Nối Quan Trọng</div>
+        <ul class="info-list">
+          <li>• <strong>AD0 của MPU6050:</strong> Nối cứng xuống <strong>GND</strong> để cố định địa chỉ I2C <code>0x68</code>.</li>
+          <li>• <strong>Chân PB3 (SDA I2C2):</strong> Trùng chức năng SWO, dùng mạch nạp SWD bình thường không bị ảnh hưởng.</li>
+          <li>• <strong>Common Ground (GND chung):</strong> Bắt buộc nối Mass chung giữa nguồn Pin, Driver Motor và MCU STM32.</li>
+          <li>• <strong>Nguồn 3.3V:</strong> Cần bộ nguồn LDO/Buck tối thiểu 800mA - 1A để nuôi MCU, 3 Laser ToF và IMU.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

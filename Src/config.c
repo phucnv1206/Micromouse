@@ -4,6 +4,8 @@ I2C_HandleTypeDef hi2c1;
 DMA_HandleTypeDef hdma_i2c1_rx;
 DMA_HandleTypeDef hdma_i2c1_tx;
 
+I2C_HandleTypeDef hi2c2;
+
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim11;
 
@@ -130,6 +132,41 @@ HAL_StatusTypeDef Config_I2C1_Init(void) {
   hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
   hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
   return HAL_I2C_Init(&hi2c1);
+}
+
+HAL_StatusTypeDef Config_I2C2_Init(void) {
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+  /* Bật clock GPIO và I2C2 trước khi cấu hình chân và ngoại vi. */
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_I2C2_CLK_ENABLE();
+
+  /*
+   * PB10 = I2C2_SCL (AF4), PB3 = I2C2_SDA (AF9).
+   * Hai chân dùng AF khác nhau nên phải cấu hình riêng từng chân.
+   * Chế độ Open-Drain bắt buộc cho I2C; cần điện trở kéo lên 4.7 kΩ ngoài.
+   */
+  GPIO_InitStruct.Pin = MPU6050_SCL;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  GPIO_InitStruct.Alternate = MPU6050_SCL_AF;
+  HAL_GPIO_Init(MPU6050_SCL_Port, &GPIO_InitStruct);
+
+  GPIO_InitStruct.Pin = MPU6050_SDA;
+  GPIO_InitStruct.Alternate = MPU6050_SDA_AF;
+  HAL_GPIO_Init(MPU6050_SDA_Port, &GPIO_InitStruct);
+
+  hi2c2.Instance = I2C2;
+  hi2c2.Init.ClockSpeed = I2C_CLOCK_SPEED_HZ;
+  hi2c2.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c2.Init.OwnAddress1 = 0;
+  hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c2.Init.OwnAddress2 = 0;
+  hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  return HAL_I2C_Init(&hi2c2);
 }
 
 static void Config_TIM1_Init(void) {

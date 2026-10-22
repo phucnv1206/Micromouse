@@ -4,6 +4,8 @@
 extern I2C_HandleTypeDef hi2c1;
 
 static volatile HAL_StatusTypeDef transferStatus = HAL_OK;
+/* Callback được gọi trong vòng chờ DMA; NULL = không yield. */
+static I2cBus_YieldFn_t yieldCallback = NULL;
 
 /*
  * HAL nhận địa chỉ thiết bị ở định dạng 8-bit (địa chỉ 7-bit dịch trái một bit).
@@ -119,6 +121,42 @@ HAL_StatusTypeDef I2cBus_GetTransferStatus(void) {
 
 uint32_t I2cBus_GetErrorCode(void) {
   return HAL_I2C_GetError(&hi2c1);
+}
+
+void I2cBus_SetYieldCallback(I2cBus_YieldFn_t fn) {
+  yieldCallback = fn;
+}
+
+/*
+ * Chờ DMA hoàn tất trong vòng lặp bận, nhưng gọi yield callback mỗi lần lặp
+ * để xử lý odometry/MPU6050 trong khi DMA tự động truyền dữ liệu trên bus.
+ * CPU không bị giữ hoàn toàn: TIM3 ISR vẫn có thể đặt cờ và yield xử lý nó.
+ */
+static HAL_StatusTypeDef I2cBus_WaitForCompletion(void) {
+  while (transferStatus == HAL_BUSY) {
+    if (yieldCallback != NULL) {
+      yieldCallback();
+    }
+  }
+  return transferStatus;
+}
+
+HAL_StatusTypeDef I2cBus_MemReadSync(uint8_t address, uint16_t reg, uint16_t regSize,
+                                     uint8_t *data, uint16_t size) {
+  HAL_StatusTypeDef status = I2cBus_MemRead(address, reg, regSize, data, size);
+  if (status != HAL_OK) {
+    return status;
+  }
+  return I2cBus_WaitForCompletion();
+}
+
+HAL_StatusTypeDef I2cBus_MemWriteSync(uint8_t address, uint16_t reg, uint16_t regSize,
+                                      const uint8_t *data, uint16_t size) {
+  HAL_StatusTypeDef status = I2cBus_MemWrite(address, reg, regSize, data, size);
+  if (status != HAL_OK) {
+    return status;
+  }
+  return I2cBus_WaitForCompletion();
 }
 
 /* Callback HAL khi một giao dịch DMA đọc/ghi dữ liệu thô hoàn tất. */

@@ -35,10 +35,13 @@ typedef enum {
  */
 HAL_StatusTypeDef TofSensors_Init(void);
 /*
- * Trả true khi đọc thành công và cung cấp khoảng cách đã lọc low-pass;
- * nếu ToF tắt, đặt các đầu ra về 0 và trả false.
+ * Cập nhật khoảng cách low-pass và trạng thái hợp lệ riêng cho từng cảm biến.
+ * leftValid/midValid/rightValid là true chỉ khi cảm biến có mẫu hợp lệ trong
+ * lần gọi này; nếu chưa có mẫu mới, khoảng cách giữ mẫu tốt cuối cùng.
+ * Giá trị trả về báo lỗi API/đầu vào, không phải trạng thái từng cảm biến.
  */
-bool TofSensors_UpdateDistances(uint16_t *leftMm, uint16_t *midMm, uint16_t *rightMm);
+bool TofSensors_UpdateDistances(uint16_t *leftMm, uint16_t *midMm, uint16_t *rightMm,
+                                bool *leftValid, bool *midValid, bool *rightValid);
 /* Trả handle VL53L0X; cảm biến giữa VL53L1X không dùng handle này. */
 VL53L0X_DEV TofSensors_GetDevice(TofXshut_Sensor sensor);
 /* Mã lỗi gốc của API ST gần nhất; NONE nghĩa là API không báo lỗi. */
