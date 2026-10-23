@@ -25,10 +25,10 @@ Khác với các dòng Micromouse truyền thống phải tự mò mẫm mê cun
 | **Driver Động Cơ** | 1 | Module cầu H (lấy trong servo mg90) | Nhận xung điều khiển PWM từ STM32 để kéo 2 động cơ N20 |
 | **Cảm Biến ToF VL53L1X** | 1 | Cảm biến khoảng cách Laser ToF tầm xa (đến 4m), giao tiếp I2C1 | Đặt ở **chính giữa đầu xe** để đo cự ly vật cản phía trước |
 | **Cảm Biến ToF VL53L0X** | 2 | Cảm biến Laser ToF tầm gần (đến 2m), giao tiếp I2C1 | Đặt ở **hai bên sườn (Trái/Phải)** để đo khoảng cách vách |
-| **Cảm Biến IMU MPU6050** | 1 | Cảm biến con quay hồi chuyển & gia tốc 6 trục (dùng I2C2 riêng) | Đo vận tốc góc trục Z ($Gyro_Z$) nhằm bù góc trượt và định hướng thân xe |
+| **Cảm Biến IMU MPU6500** | 1 | Cảm biến con quay hồi chuyển & gia tốc 6 trục (dùng I2C2 riêng) | Đo vận tốc góc trục Z ($Gyro_Z$) nhằm bù góc trượt và định hướng thân xe |
 | **Pin LiPo 2S** | 1 | 7.4V danh định (8.4V sạc đầy) | Cung cấp nguồn năng lượng chính cho toàn bộ xe |
 | **Mạch Hạ Áp Buck 6V** | 1 | Mạch nguồn hạ áp DC-DC từ Pin 2S (7.4V - 8.4V) xuống ổn định 6.0V | Cấp nguồn công suất riêng cho động cơ N20 qua Driver và làm đầu vào cho LDO 3.3V |
-| **Mạch LDO AMS1117-3.3V** | 1 | Mạch hạ áp tuyến tính Low-Dropout hạ từ **6.0V xuống 3.3V** (dòng tải 800mA - 1A, kèm tụ lọc input/output) | Cấp nguồn Logic sạch cho STM32, ESP32, 3x ToF, MPU6050, 2x Encoders |
+| **Mạch LDO AMS1117-3.3V** | 1 | Mạch hạ áp tuyến tính Low-Dropout hạ từ **6.0V xuống 3.3V** (dòng tải 800mA - 1A, kèm tụ lọc input/output) | Cấp nguồn Logic sạch cho STM32, ESP32, 3x ToF, MPU6500, 2x Encoders |
 | **Ngoại vi UI** | 3 LED, 2 Nút | 3 LED báo trạng thái, 2 nút nhấn cấu hình chế độ chạy | Thao tác chọn chế độ, báo lỗi, căn chỉnh xe tại vạch xuất phát |
 | **Tụ lọc & Đầu nối** | - | Tụ điện phân (100uF - 220uF), tụ gốm (100nF), Jack XT30, XH2.54 | Chống sụt áp khi đề-pa động cơ, lọc nhiễu đường nguồn 3.3V và 6V |
 
@@ -60,7 +60,7 @@ Hệ thống sử dụng mô hình hạ áp **nối tầng (Cascade)**: Pin 2S t
                |                            | • STM32F401RCT6             |
                |                            | • ESP32-S3 Mini             |
                |                            | • 1x VL53L1X + 2x VL53L0X   |
-               |                            | • MPU6050 (IMU)             |
+               |                            | • MPU6500 (IMU)             |
                |                            | • 2x Encoders               |
                |                            +--------------+--------------+
                |                                           |
@@ -82,7 +82,7 @@ Hệ thống sử dụng mô hình hạ áp **nối tầng (Cascade)**: Pin 2S t
 
 ## 🔌 4. Bảng Đấu Nối Chân Vi Điều Khiển (STM32F401 Pinout)
 
-Hệ thống được thiết kế tối ưu với **2 Bus I2C tách biệt** nhằm giúp việc đọc cảm biến góc MPU6050 ở tần số cao không bị xung đột với 3 cảm biến ToF:
+Hệ thống được thiết kế tối ưu với **2 Bus I2C tách biệt** nhằm giúp việc đọc cảm biến góc MPU6500 ở tần số cao không bị xung đột với 3 cảm biến ToF:
 
 | Khối Chức Năng | Chân STM32 | Chế Độ Ngoại Vi | Nối Đến Linh Kiện |
 |---|---|---|---|
@@ -94,7 +94,7 @@ Hệ thống được thiết kế tối ưu với **2 Bus I2C tách biệt** nh
 | **XSHUT ToF Trái** | `PB15` | GPIO Output | Chân XSHUT của cảm biến VL53L0X Trái |
 | **XSHUT ToF Giữa** | `PB14` | GPIO Output | Chân XSHUT của cảm biến VL53L1X Giữa |
 | **XSHUT ToF Phải** | `PB13` | GPIO Output | Chân XSHUT của cảm biến VL53L0X Phải |
-| **Bus I2C2 (MPU)** | `PB10` / `PB3` | I2C2 SCL (AF4) / SDA (AF9) | Nối riêng đến SCL, SDA của MPU6050 |
+| **Bus I2C2 (IMU)** | `PB10` / `PB3` | I2C2 SCL (AF4) / SDA (AF9) - **800kHz** | Nối riêng đến SCL, SDA của MPU6500 (Đã tắt SWV trên PB3) |
 | **UART Telemetry** | `PA2` / `PA3` | USART2 TX / RX (921600 baud) | Nối chéo (TX-RX, RX-TX) sang **ESP32-S3 Mini** |
 | **Nút Nhấn** | `PA0` / `PA1` | GPIO Input (Pull-up nội) | 2 nút bấm thao tác nối xuống GND |
 | **LED Trạng Thái** | `PC13`..`PC15` | GPIO Output | 3 LED nối tiếp qua trở 330Ω xuống GND |
@@ -122,7 +122,7 @@ Firmware được tổ chức dạng **Cooperative Scheduler** nhiều chu kỳ 
 [TIM3 Interrupt (1000 Hz)]
          │
          ├──> Odometry_Update()   : Tích phân vi sai từ xung Encoder
-         └──> Mpu6050_Update()    : Đọc Gyro Z qua I2C2 + Lọc IIR Low-Pass
+         └──> Mpu6500_Update()    : Đọc Gyro Z qua I2C2 + Lọc IIR Low-Pass
 
 [Task Điều Khiển (100 Hz)]
          └──> Đọc lệnh điều khiển UART / Cập nhật độ rộng xung PWM động cơ
@@ -134,8 +134,8 @@ Firmware được tổ chức dạng **Cooperative Scheduler** nhiều chu kỳ 
 ```
 
 ### Điểm nổi bật trong kiến trúc:
-* **Tách rời 2 Bus I2C:** Bus `I2C2` chạy riêng cho MPU6050 ở tần số 1000 Hz, trong khi `I2C1` chạy cho 3 ToF ở 40 Hz.
-* **Cơ chế Yield Callback chống nghẽn:** Khi ToF đang trao đổi dữ liệu với DMA trên `I2C1`, CPU không đứng chờ lãng phí mà liên tục kiểm tra cờ nhịp `TIM3`. Nếu đến hạn 1ms, MCU thực hiện ngay `Odometry_Update()` và đọc `MPU6050` qua `I2C2`, giúp việc tính toán vị trí xe không bao giờ bị trễ dù cảm biến khoảng cách đang đo.
+* **Tách rời 2 Bus I2C:** Bus `I2C2` chạy riêng cho MPU6500 ở tần số 1000 Hz, trong khi `I2C1` chạy cho 3 ToF ở 40 Hz.
+* **Cơ chế Yield Callback chống nghẽn:** Khi ToF đang trao đổi dữ liệu với DMA trên `I2C1`, CPU không đứng chờ lãng phí mà liên tục kiểm tra cờ nhịp `TIM3`. Nếu đến hạn 1ms, MCU thực hiện ngay `Odometry_Update()` và đọc `MPU6500` qua `I2C2`, giúp việc tính toán vị trí xe không bao giờ bị trễ dù cảm biến khoảng cách đang đo.
 * **Bộ lọc thông thấp số (IIR Low-Pass Filter):** Cả dữ liệu đo khoảng cách ToF và tốc độ góc $Gyro_Z$ đều được lọc mượt, loại bỏ các gai nhiễu cơ khí.
 
 ---
@@ -178,7 +178,7 @@ Nguyên nhân là do đường dẫn compiler GCC trên máy bạn khác với �
 
 ## 🗺️ 9. Kế Hoạch Phát Triển Tiếp Theo
 - [ ] Hoàn thiện code nhận lệnh và truyền nhận dữ liệu trên ESP32-S3 Mini.
-- [ ] Xây dựng thuật toán lọc phối hợp Odometry bánh xe và MPU6050 (Complementary / Kalman Filter).
+- [ ] Xây dựng thuật toán lọc phối hợp Odometry bánh xe và MPU6500 (Complementary / Kalman Filter).
 - [ ] Lưu trữ và tái hiện quỹ đạo chạy (Mapping & Replay Trajectory).
 - [ ] Thuật toán tối ưu góc cua (Curve optimization) để đạt tốc độ tối đa trong pha Fast-Run.
 

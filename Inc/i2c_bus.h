@@ -30,7 +30,7 @@ uint32_t I2cBus_GetErrorCode(void);
 
 /*
  * Đăng ký hàm callback được gọi trong vòng chờ DMA hoàn tất.
- * Dùng để xử lý odometry / MPU6050 trong khi bus I2C truyền dữ liệu ngầm,
+ * Dùng để xử lý odometry / MPU6500 trong khi bus I2C truyền dữ liệu ngầm,
  * tránh để CPU thực sự rảnh rỗi trong suốt quá trình truyền.
  * Truyền NULL để huỷ callback đã đăng ký.
  */

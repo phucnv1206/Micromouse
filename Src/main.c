@@ -6,7 +6,7 @@
 #include "led.h"
 #include "button.h"
 #include "tof_sensors.h"
-#include "mpu6050.h"
+#include "mpu6500.h"
 #include "i2c_bus.h"
 
 
@@ -58,9 +58,9 @@ static void I2cYield_ProcessOdometry(void) {
     if (Odometry_Update() != HAL_OK) {
       Error_Handler();
     }
-    if (Mpu6050_Update() != HAL_OK) {
-      Error_Handler();
-    }
+#if MPU6500_ENABLED
+    Mpu6500_Update();
+#endif
   }
 }
 #endif
@@ -103,23 +103,12 @@ static void loop(void) {
 
 static void debug(void) {
   
-#if ODOMETRY_ENABLED
-  debugTelemetry.data1 = (int16_t)debugOdometryState.x_mm;
-  debugTelemetry.data2 = (int16_t)debugOdometryState.y_mm;
-  debugTelemetry.data3 = (int16_t)debugOdometryState.heading_deg;
-#else
-  debugTelemetry.data1 = 0;
+  debugTelemetry.data1 = (int16_t)(Mpu6500_GetGyroZ() * 100.0f);
   debugTelemetry.data2 = 0;
   debugTelemetry.data3 = 0;
-#endif
-  // debugTelemetry.data4 = (int16_t)debugOdometryState.wheel_linear_mm_s[ENCODER_RIGHT];
-  // debugTelemetry.data5 = (int16_t)debugOdometryState.wheel_linear_mm_s[ENCODER_LEFT];
   debugTelemetry.data4 = (int16_t)debugMidDistanceMm;
   debugTelemetry.data5 = (int16_t)debugLeftDistanceMm;
-  // debugTelemetry.data4 = (int16_t)debugLeftDistanceMm;
-  // debugTelemetry.data5 = (int16_t)LeftValid;
   debugTelemetry.data6 = (int16_t)debugRightDistanceMm;
-  // debugTelemetry.data7 = (int16_t)RightValid;
   debugTelemetry.data7 = (int16_t)cpuLoadTenthsPercent;
 }
 
@@ -161,9 +150,11 @@ int main(void) {
   }
   I2cBus_SetYieldCallback(I2cYield_ProcessOdometry);
 #endif
-  if (Mpu6050_Init() != HAL_OK) {
+#if MPU6500_ENABLED
+  if (Mpu6500_Init() != HAL_OK) {
     Error_Handler();
   }
+#endif
   if (MotorPwm_Init() != HAL_OK) {
     Error_Handler();
   }
@@ -176,9 +167,13 @@ int main(void) {
 
   /* Bật DWT CYCCNT để đo thời gian xử lý và tải CPU bằng số chu kỳ CPU. */
   CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+  /* Đảm bảo ITM và Trace không can thiệp vào chân PB3 (TRACESWO) */
+  ITM->TCR = 0U;
+  ITM->TER = 0U;
+  DBGMCU->CR &= ~(DBGMCU_CR_TRACE_IOEN | DBGMCU_CR_TRACE_MODE);
   DWT->CYCCNT = 0U;
   DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
-
+ 
 #if ODOMETRY_ENABLED
   odometryUpdatePending = 0U;
 #endif
@@ -225,10 +220,9 @@ int main(void) {
       if (Odometry_Update() != HAL_OK) {
         Error_Handler();
       }
-      /* Cập nhật MPU6050 cùng nhịp odometry 1000 Hz để bộ lọc hoạt động đúng. */
-      if (Mpu6050_Update() != HAL_OK) {
-        Error_Handler();
-      }
+#if MPU6500_ENABLED
+      Mpu6500_Update();
+#endif
       taskRan = 1U;
     }
 #endif

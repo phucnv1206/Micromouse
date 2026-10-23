@@ -137,6 +137,15 @@ HAL_StatusTypeDef Config_I2C1_Init(void) {
 HAL_StatusTypeDef Config_I2C2_Init(void) {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
 
+  /*
+   * Tắt chức năng SWV (Serial Wire Viewer / TRACESWO) trên chân PB3:
+   * Chân PB3 mặc định của STM32F4 có chức năng SYS_JTDO-SWO (AF0).
+   * Khi nạp/debug với SWD có bật SWV (Trace Asynchronous Sw), khối DBGMCU
+   * sẽ chiếm giữ chân PB3 để xuất xung trace, làm xung đột với I2C2 SDA (AF9).
+   * Lệnh dưới đây tắt TRACE IOEN trên DBGMCU để trả chân PB3 về GPIO / Alternate Function thông thường.
+   */
+  DBGMCU->CR &= ~(DBGMCU_CR_TRACE_IOEN | DBGMCU_CR_TRACE_MODE);
+
   /* Bật clock GPIO và I2C2 trước khi cấu hình chân và ngoại vi. */
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_I2C2_CLK_ENABLE();
@@ -144,21 +153,21 @@ HAL_StatusTypeDef Config_I2C2_Init(void) {
   /*
    * PB10 = I2C2_SCL (AF4), PB3 = I2C2_SDA (AF9).
    * Hai chân dùng AF khác nhau nên phải cấu hình riêng từng chân.
-   * Chế độ Open-Drain bắt buộc cho I2C; cần điện trở kéo lên 4.7 kΩ ngoài.
+   * Module MPU6500 đã có sẵn trở kéo pull-up trên bo nên để GPIO_NOPULL.
    */
-  GPIO_InitStruct.Pin = MPU6050_SCL;
+  GPIO_InitStruct.Pin = MPU6500_SCL;
   GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  GPIO_InitStruct.Alternate = MPU6050_SCL_AF;
-  HAL_GPIO_Init(MPU6050_SCL_Port, &GPIO_InitStruct);
+  GPIO_InitStruct.Alternate = MPU6500_SCL_AF;
+  HAL_GPIO_Init(MPU6500_SCL_Port, &GPIO_InitStruct);
 
-  GPIO_InitStruct.Pin = MPU6050_SDA;
-  GPIO_InitStruct.Alternate = MPU6050_SDA_AF;
-  HAL_GPIO_Init(MPU6050_SDA_Port, &GPIO_InitStruct);
+  GPIO_InitStruct.Pin = MPU6500_SDA;
+  GPIO_InitStruct.Alternate = MPU6500_SDA_AF;
+  HAL_GPIO_Init(MPU6500_SDA_Port, &GPIO_InitStruct);
 
   hi2c2.Instance = I2C2;
-  hi2c2.Init.ClockSpeed = I2C_CLOCK_SPEED_HZ;
+  hi2c2.Init.ClockSpeed = MPU6500_I2C_CLOCK_SPEED_HZ;
   hi2c2.Init.DutyCycle = I2C_DUTYCYCLE_2;
   hi2c2.Init.OwnAddress1 = 0;
   hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
