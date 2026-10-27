@@ -46,6 +46,7 @@
 extern I2C_HandleTypeDef hi2c2;
 
 static float gyroZ_filtered = 0.0f;
+static float gyroZ_bias = 0.0f;
 static uint8_t mpu6500_initialized = 0U;
 
 static int16_t mpu_init_step = 0;
@@ -136,9 +137,41 @@ HAL_StatusTypeDef Mpu6500_Init(void) {
   }
 
   gyroZ_filtered = 0.0f;
+  gyroZ_bias = 0.0f;
   mpu_read_count = 0;
   mpu_init_step = (int16_t)who_am_i; /* Thành công: trả về mã WHO_AM_I (112 = 0x70) */
   mpu6500_initialized = 1U;
+
+  /*
+   * 7. Tự động lấy mẫu hiệu chuẩn static bias ban đầu (100 mẫu x 2ms = 200ms)
+   * khi robot vừa khởi động đứng yên trên mặt sàn phẳng.
+   */
+  Mpu6500_Calibrate(100U);
+
+  return HAL_OK;
+}
+
+HAL_StatusTypeDef Mpu6500_Calibrate(uint16_t sample_count) {
+  if (mpu6500_initialized == 0U || sample_count == 0U) {
+    return HAL_ERROR;
+  }
+
+  float bias_sum = 0.0f;
+  uint16_t valid_samples = 0U;
+
+  for (uint16_t i = 0U; i < sample_count; i++) {
+    uint8_t raw[6];
+    if (Mpu6500_ReadRegs(MPU6500_REG_GYRO_XOUT_H, raw, 6U, MPU6500_I2C_TIMEOUT_MS) == HAL_OK) {
+      int16_t raw_z = (int16_t)(((uint16_t)raw[4] << 8U) | (uint16_t)raw[5]);
+      bias_sum += (float)raw_z / MPU6500_GYRO_SENSITIVITY;
+      valid_samples++;
+    }
+    HAL_Delay(2U);
+  }
+
+  if (valid_samples > 0U) {
+    gyroZ_bias = bias_sum / (float)valid_samples;
+  }
   return HAL_OK;
 }
 
@@ -178,6 +211,10 @@ float Mpu6500_GetGyroZ(void) {
   return gyroZ_filtered;
 }
 
+float Mpu6500_GetGyroBias(void) {
+  return gyroZ_bias;
+}
+
 int16_t Mpu6500_GetInitStep(void) {
   return mpu_init_step;
 }
@@ -202,6 +239,15 @@ HAL_StatusTypeDef Mpu6500_Update(void) {
 
 float Mpu6500_GetGyroZ(void) {
   return 0.0f;
+}
+
+float Mpu6500_GetGyroBias(void) {
+  return 0.0f;
+}
+
+HAL_StatusTypeDef Mpu6500_Calibrate(uint16_t sample_count) {
+  (void)sample_count;
+  return HAL_OK;
 }
 
 int16_t Mpu6500_GetInitStep(void) {

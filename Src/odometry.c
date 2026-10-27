@@ -1,6 +1,8 @@
 #include "main.h"
 #include "odometry.h"
 #include "config.h"
+#include "kalman_filter.h"
+#include "mpu6500.h"
 #include <math.h>
 
 #if ODOMETRY_ENABLED
@@ -68,6 +70,12 @@ HAL_StatusTypeDef Odometry_Init(void) {
   }
   speed_window_sample_count = 0U;
 
+  float initial_bias = 0.0f;
+#if MPU6500_ENABLED
+  initial_bias = Mpu6500_GetGyroBias();
+#endif
+  KalmanOdometry_Init(ODOMETRY_INITIAL_HEADING_DEG, initial_bias);
+
   odometry_initialized = 1U;
   return HAL_OK;
 }
@@ -96,6 +104,8 @@ HAL_StatusTypeDef Odometry_Update(void) {
   steps_per_wheel_revolution = Odometry_WheelStepsPerRevolution();
   wheel_circumference_mm = ODOMETRY_PI * ODOMETRY_WHEEL_DIAMETER_MM;
 
+  int32_t raw_wheel_step_deltas[ENCODER_MOTOR_COUNT];
+
   /* Xử lý độc lập từng bánh: delta count, bù tràn, hiệu chỉnh chiều và đổi đơn vị. */
   for (uint32_t i = 0U; i < ENCODER_MOTOR_COUNT; i++) {
     int32_t step_delta = (int32_t)snapshot.count[i] - (int32_t)previous_count[i];
@@ -115,6 +125,7 @@ HAL_StatusTypeDef Odometry_Update(void) {
     }
 
     wheel_step_delta = step_delta * encoder_sign;
+    raw_wheel_step_deltas[i] = wheel_step_delta;
     speed_window_steps[i] += wheel_step_delta;
     /* Quãng đường mẫu này dùng cho pose; không đợi hết cửa sổ lọc vận tốc. */
     distance_mm[i] = ((float)wheel_step_delta * wheel_circumference_mm) / steps_per_wheel_revolution;
@@ -139,22 +150,68 @@ HAL_StatusTypeDef Odometry_Update(void) {
 
   left_distance_mm = distance_mm[ENCODER_LEFT];
   right_distance_mm = distance_mm[ENCODER_RIGHT];
-  /*
-   * Mô hình truyền động vi sai:
-   * d_heading = (quãng đường phải - quãng đường trái) / khoảng cách hai bánh.
-   * Tịnh tiến tâm xe bằng trung bình quãng đường hai bánh.
-   */
-  heading_delta_rad = (right_distance_mm - left_distance_mm) / ODOMETRY_WHEEL_TRACK_MM;
   distance_center_mm = (right_distance_mm + left_distance_mm) * 0.5f;
-  heading_before_rad = odometry_state.heading_deg * (ODOMETRY_PI / 180.0f);
 
+  const float dt_s = 1.0f / (float)ODOMETRY_UPDATE_FREQUENCY_HZ;
+  /* Biến thiên góc hướng tính từ hai encoder (đơn vị độ) */
+  float enc_heading_delta_deg = ((right_distance_mm - left_distance_mm) / ODOMETRY_WHEEL_TRACK_MM) * (180.0f / ODOMETRY_PI);
+  float enc_omega_dps = enc_heading_delta_deg / dt_s;
+
+  float heading_before_deg = odometry_state.heading_deg;
+  heading_before_rad = heading_before_deg * (ODOMETRY_PI / 180.0f);
+
+  float gyro_z_dps = 0.0f;
+  uint8_t gyro_available = 0U;
+#if MPU6500_ENABLED
+  gyro_z_dps = Mpu6500_GetGyroZ();
+  gyro_available = (Mpu6500_GetReadCount() > 0U) ? 1U : 0U;
+#endif
+
+  if (gyro_available != 0U) {
+    /* 1. Bước dự báo Kalman theo chu kỳ dt_s */
+    KalmanOdometry_Predict(dt_s);
+
+    /* 2. Cập nhật đo lường từ GyroZ (Quy ước: Gyro dương -> theta tăng) */
+    KalmanOdometry_UpdateGyro(gyro_z_dps);
+
+    /* 3. Cập nhật đo lường từ Encoder hoặc Zero-Velocity Update (ZUPT) */
+    float gyro_unbiased = gyro_z_dps - KalmanOdometry_GetGyroBias();
+    uint8_t is_stationary = (raw_wheel_step_deltas[ENCODER_LEFT] == 0 &&
+                             raw_wheel_step_deltas[ENCODER_RIGHT] == 0 &&
+                             fabsf(gyro_unbiased) < 2.5f) ? 1U : 0U;
+    if (is_stationary != 0U) {
+      KalmanOdometry_UpdateZeroVelocity();
+    } else {
+      KalmanOdometry_UpdateEncoder(enc_omega_dps, false);
+    }
+
+    odometry_state.heading_deg = KalmanOdometry_GetHeading();
+    odometry_state.angular_rad_s = KalmanOdometry_GetAngularVelocityRad();
+    heading_delta_rad = odometry_state.angular_rad_s * dt_s;
+  } else {
+    /* Phương án dự phòng thuần Encoder nếu không có Gyro */
+    heading_delta_rad = enc_heading_delta_deg * (ODOMETRY_PI / 180.0f);
+    odometry_state.heading_deg += enc_heading_delta_deg;
+    while (odometry_state.heading_deg >= 360.0f) {
+      odometry_state.heading_deg -= 360.0f;
+    }
+    while (odometry_state.heading_deg < 0.0f) {
+      odometry_state.heading_deg += 360.0f;
+    }
+    odometry_state.angular_rad_s = (odometry_state.wheel_linear_mm_s[ENCODER_RIGHT] - odometry_state.wheel_linear_mm_s[ENCODER_LEFT]) / ODOMETRY_WHEEL_TRACK_MM;
+  }
+
+  /*
+   * Tích hợp vị trí (x, y) trên mặt phẳng phẳng dựa trên góc hướng đã được
+   * kết hợp chính xác từ Kalman filter:
+   */
   if (heading_delta_rad > -0.000001f && heading_delta_rad < 0.000001f) {
-    /* Chạy gần thẳng: dùng góc giữa mẫu để tránh chia cho góc quay rất nhỏ. */
+    /* Chạy gần thẳng: dùng góc trung bình giữa mẫu */
     float mid_heading_rad = heading_before_rad + heading_delta_rad * 0.5f;
     odometry_state.x_mm += distance_center_mm * cosf(mid_heading_rad);
     odometry_state.y_mm += distance_center_mm * sinf(mid_heading_rad);
   } else {
-    /* Khi đang quay, tích phân cung tròn chính xác giữa hai mẫu odometry. */
+    /* Khi đang quay, tích phân cung tròn chính xác giữa hai mẫu odometry */
     float heading_after_rad = heading_before_rad + heading_delta_rad;
     float turn_radius_mm = distance_center_mm / heading_delta_rad;
 
@@ -162,16 +219,7 @@ HAL_StatusTypeDef Odometry_Update(void) {
     odometry_state.y_mm -= turn_radius_mm * (cosf(heading_after_rad) - cosf(heading_before_rad));
   }
 
-  odometry_state.heading_deg += heading_delta_rad * (180.0f / ODOMETRY_PI);
-  while (odometry_state.heading_deg >= 360.0f) {
-    odometry_state.heading_deg -= 360.0f;
-  }
-  while (odometry_state.heading_deg < 0.0f) {
-    odometry_state.heading_deg += 360.0f;
-  }
-
   odometry_state.linear_mm_s = (odometry_state.wheel_linear_mm_s[ENCODER_LEFT] + odometry_state.wheel_linear_mm_s[ENCODER_RIGHT]) * 0.5f;
-  odometry_state.angular_rad_s = (odometry_state.wheel_linear_mm_s[ENCODER_RIGHT] - odometry_state.wheel_linear_mm_s[ENCODER_LEFT]) / ODOMETRY_WHEEL_TRACK_MM;
   return HAL_OK;
 }
 
@@ -192,6 +240,30 @@ HAL_StatusTypeDef Odometry_GetWheelSpeedMmS(Encoder_Motor motor, float *speed_mm
   }
 
   *speed_mm_s = odometry_state.wheel_linear_mm_s[motor];
+  return HAL_OK;
+}
+
+HAL_StatusTypeDef Odometry_Reset(void) {
+  Encoder_Snapshot snapshot;
+  if (Encoder_GetSnapshot(&snapshot) != HAL_OK) {
+    return HAL_ERROR;
+  }
+
+  odometry_state.x_mm = 0.0f;
+  odometry_state.y_mm = 0.0f;
+  odometry_state.heading_deg = ODOMETRY_INITIAL_HEADING_DEG;
+  odometry_state.linear_mm_s = 0.0f;
+  odometry_state.angular_rad_s = 0.0f;
+  for (uint32_t i = 0U; i < ENCODER_MOTOR_COUNT; i++) {
+    odometry_state.wheel_angular_rad_s[i] = 0.0f;
+    odometry_state.wheel_linear_mm_s[i] = 0.0f;
+    odometry_state.wheel_direction[i] = 0;
+    previous_count[i] = snapshot.count[i];
+    speed_window_steps[i] = 0;
+  }
+  speed_window_sample_count = 0U;
+
+  KalmanOdometry_Reset(ODOMETRY_INITIAL_HEADING_DEG);
   return HAL_OK;
 }
 
@@ -222,6 +294,10 @@ HAL_StatusTypeDef Odometry_GetWheelSpeedMmS(Encoder_Motor motor, float *speed_mm
   }
 
   *speed_mm_s = 0.0f;
+  return HAL_OK;
+}
+
+HAL_StatusTypeDef Odometry_Reset(void) {
   return HAL_OK;
 }
 

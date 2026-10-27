@@ -7,7 +7,10 @@
 #include "button.h"
 #include "tof_sensors.h"
 #include "mpu6500.h"
+#include "kalman_filter.h"
+#include "pid_controller.h"
 #include "i2c_bus.h"
+#include "navigation.h"
 
 
 
@@ -24,6 +27,10 @@ static uint16_t debugRightDistanceMm;
 static bool LeftValid;
 static bool MidValid;
 static bool RightValid;
+
+static float x_left, x_right, x_mid;
+static float y_left, y_right, y_mid;
+
 #if ODOMETRY_ENABLED
 /* Cờ báo timer odometry vừa đến hạn; volatile vì được cập nhật trong ngắt TIM3. */
 static volatile uint8_t odometryUpdatePending;
@@ -55,12 +62,12 @@ static void I2cYield_ProcessOdometry(void) {
     __enable_irq();
   }
   if (due != 0U) {
-    if (Odometry_Update() != HAL_OK) {
-      Error_Handler();
-    }
 #if MPU6500_ENABLED
     Mpu6500_Update();
 #endif
+    if (Odometry_Update() != HAL_OK) {
+      Error_Handler();
+    }
   }
 }
 #endif
@@ -69,47 +76,48 @@ static void I2cYield_ProcessOdometry(void) {
 
 static void readUart(void){
   UartProtocol_RxFrame rxFrame;
-  int16_t motorRightCommand = 0;
-  int16_t motorLeftCommand = 0;
-  uint8_t commandReceived = 0U;
   HAL_StatusTypeDef receiveStatus;
   do {
     receiveStatus = UartProtocol_Receive(&rxFrame);
     if (receiveStatus == HAL_OK) {
-      /* Lệnh ngoài -100..100 được MotorPwm_Set() bão hòa về giới hạn gần nhất. */
-      motorRightCommand = rxFrame.data1;
-      motorLeftCommand = rxFrame.data2;
-      commandReceived = 1U;
+      /* Chuyển mã lệnh và dữ liệu vào bộ điều khiển chuyển động PID */
+      Motion_ProcessCommand(rxFrame.command, rxFrame.data1, rxFrame.data2);
     } else if (receiveStatus != HAL_BUSY) {
       Error_Handler();
     }
   } while (receiveStatus == HAL_OK);
-  if (commandReceived != 0U) {
-    RunMotorRight(motorRightCommand);
-    RunMotorLeft(motorLeftCommand);
-  }
 }
-
-
 
 static void loop(void) {
   readUart();
-  /* code here*/
 
-
-  
+  /* Chu kỳ điều khiển vòng lặp chính 100 Hz (dt = 0.01 giây) */
+  const float dt_s = 1.0f / (float)CONTROL_LOOP_FREQUENCY_HZ;
+  Motion_Update(dt_s);
 }
 
 
 static void debug(void) {
-  
-  debugTelemetry.data1 = (int16_t)(Mpu6500_GetGyroZ() * 100.0f);
-  debugTelemetry.data2 = 0;
-  debugTelemetry.data3 = 0;
-  debugTelemetry.data4 = (int16_t)debugMidDistanceMm;
-  debugTelemetry.data5 = (int16_t)debugLeftDistanceMm;
-  debugTelemetry.data6 = (int16_t)debugRightDistanceMm;
-  debugTelemetry.data7 = (int16_t)cpuLoadTenthsPercent;
+  /* Tính tọa độ vật thể/tường phát hiện bởi 3 cảm biến ToF dựa trên navigation và pose xe */
+  leftpose((float)debugLeftDistanceMm, debugOdometryState.x_mm, debugOdometryState.y_mm, debugOdometryState.heading_deg, &x_left, &y_left);
+  midpose((float)debugMidDistanceMm, debugOdometryState.x_mm, debugOdometryState.y_mm, debugOdometryState.heading_deg, &x_mid, &y_mid);
+  rightpose((float)debugRightDistanceMm, debugOdometryState.x_mm, debugOdometryState.y_mm, debugOdometryState.heading_deg, &x_right, &y_right);
+
+  debugTelemetry.data1  = (int16_t)debugOdometryState.x_mm;
+  debugTelemetry.data2  = (int16_t)debugOdometryState.y_mm;
+  debugTelemetry.data3  = (int16_t)debugOdometryState.heading_deg;
+  debugTelemetry.data4  = (int16_t)KalmanOdometry_GetAngularVelocity();
+  debugTelemetry.data5  = (int16_t)x_left;
+  debugTelemetry.data6  = (int16_t)y_left;
+  debugTelemetry.data7  = (int16_t)x_mid;
+  debugTelemetry.data8  = (int16_t)y_mid;
+  debugTelemetry.data9  = (int16_t)x_right;
+  debugTelemetry.data10 = (int16_t)y_right;
+  debugTelemetry.data11 = (int16_t)debugLeftDistanceMm;
+  debugTelemetry.data12 = (int16_t)debugMidDistanceMm;
+  debugTelemetry.data13 = (int16_t)debugRightDistanceMm;
+  debugTelemetry.data14 = (int16_t)(cpuLoadTenthsPercent);
+  debugTelemetry.data15 = Motion_GetFeedbackStatusWord();
 }
 
 
@@ -141,6 +149,11 @@ int main(void) {
     Error_Handler();
   }
 #endif
+#if MPU6500_ENABLED
+  if (Mpu6500_Init() != HAL_OK) {
+    Error_Handler();
+  }
+#endif
 #if ODOMETRY_ENABLED
   if (Odometry_Init() != HAL_OK) {
     Error_Handler();
@@ -150,14 +163,10 @@ int main(void) {
   }
   I2cBus_SetYieldCallback(I2cYield_ProcessOdometry);
 #endif
-#if MPU6500_ENABLED
-  if (Mpu6500_Init() != HAL_OK) {
-    Error_Handler();
-  }
-#endif
   if (MotorPwm_Init() != HAL_OK) {
     Error_Handler();
   }
+  Motion_Init();
   if (UartProtocol_Init() != HAL_OK) {
     Error_Handler();
   }
@@ -217,12 +226,12 @@ int main(void) {
 
     /* Xử lý odometry trong main context, không làm phép toán nặng trong ISR. */
     if (odometryDue != 0U) {
-      if (Odometry_Update() != HAL_OK) {
-        Error_Handler();
-      }
 #if MPU6500_ENABLED
       Mpu6500_Update();
 #endif
+      if (Odometry_Update() != HAL_OK) {
+        Error_Handler();
+      }
       taskRan = 1U;
     }
 #endif

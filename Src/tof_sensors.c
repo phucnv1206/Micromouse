@@ -28,16 +28,125 @@ static VL53L1X_ERROR lastL1Error = 0;
 static TofSensors_InitStage lastInitStage = TOF_INIT_STAGE_NONE;
 static TofXshut_Sensor lastInitSensor = TOF_SENSOR_RIGHT;
 
+typedef struct {
+  uint16_t raw;
+  uint16_t actual;
+} TofSensors_CalibPoint;
+
+#define TOF_CALIB_MAX_DISTANCE_MM 500U
+
+/* Bảng ánh xạ thực nghiệm cho cảm biến RIGHT (VL53L0X) */
+static const TofSensors_CalibPoint calibRightTable[] = {
+  { 76U,  50U},
+  { 84U,  60U},
+  {105U,  80U},
+  {127U, 100U},
+  {145U, 120U},
+  {180U, 150U},
+  {240U, 200U},
+  {280U, 250U},
+  {330U, 300U},
+  {380U, 350U},
+  {420U, 400U},
+  {460U, 450U},
+  {500U, 500U}
+};
+
+/* Bảng ánh xạ thực nghiệm cho cảm biến MID (VL53L1X) */
+static const TofSensors_CalibPoint calibMidTable[] = {
+  { 33U,  50U},
+  { 45U,  60U},
+  { 65U,  80U},
+  { 90U, 100U},
+  {110U, 120U},
+  {140U, 150U},
+  {190U, 200U},
+  {238U, 250U},
+  {286U, 300U},
+  {325U, 350U},
+  {372U, 400U},
+  {424U, 450U},
+  {470U, 500U},
+  {500U, 500U}
+};
+
+/* Bảng ánh xạ thực nghiệm cho cảm biến LEFT (VL53L0X) */
+static const TofSensors_CalibPoint calibLeftTable[] = {
+  { 50U,  50U},
+  { 60U,  60U},
+  { 80U,  80U},
+  {100U, 100U},
+  {124U, 120U},
+  {160U, 150U},
+  {218U, 200U},
+  {270U, 250U},
+  {320U, 300U},
+  {370U, 350U},
+  {415U, 400U},
+  {460U, 450U},
+  {500U, 500U}
+};
+
+static uint16_t TofSensors_Interpolate(uint16_t rawMm, const TofSensors_CalibPoint *table, uint8_t count) {
+  /* Trên 500mm hoặc vượt quá ngưỡng đo trong bảng: không cần hiệu chuẩn, giữ nguyên raw */
+  if (rawMm >= TOF_CALIB_MAX_DISTANCE_MM || rawMm >= table[count - 1U].raw) {
+    return rawMm;
+  }
+
+  /* Dưới điểm đo đầu tiên: ngoại suy tuyến tính theo đoạn đầu tiên để không bị nhảy nấc */
+  if (rawMm <= table[0U].raw) {
+    int32_t dy = (int32_t)table[1U].actual - (int32_t)table[0U].actual;
+    int32_t dx = (int32_t)table[1U].raw - (int32_t)table[0U].raw;
+    if (dx <= 0) {
+      return table[0U].actual;
+    }
+    int32_t diff = (int32_t)rawMm - (int32_t)table[0U].raw;
+    int32_t val = (int32_t)table[0U].actual + (diff * dy) / dx;
+    if (val < 0) {
+      return 0U;
+    }
+    return (uint16_t)val;
+  }
+
+  /* Nội suy tuyến tính từng đoạn (Piecewise Linear Interpolation) */
+  for (uint8_t i = 0U; i < (count - 1U); i++) {
+    if (rawMm <= table[i + 1U].raw) {
+      uint32_t dx = (uint32_t)(table[i + 1U].raw - table[i].raw);
+      if (dx == 0U) {
+        return table[i].actual;
+      }
+      uint32_t dy = (uint32_t)(table[i + 1U].actual - table[i].actual);
+      uint32_t diff = (uint32_t)(rawMm - table[i].raw);
+      return (uint16_t)(table[i].actual + (diff * dy + (dx / 2U)) / dx);
+    }
+  }
+
+  return rawMm;
+}
+
+uint16_t TofSensors_CalibrateDistance(TofXshut_Sensor sensor, uint16_t rawMm) {
+  switch (sensor) {
+    case TOF_SENSOR_LEFT:
+      return TofSensors_Interpolate(rawMm, calibLeftTable, (uint8_t)(sizeof(calibLeftTable) / sizeof(calibLeftTable[0])));
+    case TOF_SENSOR_MID:
+      return TofSensors_Interpolate(rawMm, calibMidTable, (uint8_t)(sizeof(calibMidTable) / sizeof(calibMidTable[0])));
+    case TOF_SENSOR_RIGHT:
+      return TofSensors_Interpolate(rawMm, calibRightTable, (uint8_t)(sizeof(calibRightTable) / sizeof(calibRightTable[0])));
+    default:
+      return rawMm;
+  }
+}
+
 static void TofSensors_UpdateFilteredDistance(TofXshut_Sensor sensor, uint16_t measurementMm) {
+  uint16_t calibratedMm = TofSensors_CalibrateDistance(sensor, measurementMm);
   if (distanceFilterInitialized[sensor] == 0U) {
-    distanceMm[sensor] = measurementMm;
+    distanceMm[sensor] = calibratedMm;
     distanceFilterInitialized[sensor] = 1U;
   } else {
     uint32_t filtered = (uint32_t)distanceMm[sensor] * (100U - TOF_LOWPASS_ALPHA_PERCENT)
-        + (uint32_t)measurementMm * TOF_LOWPASS_ALPHA_PERCENT;
+        + (uint32_t)calibratedMm * TOF_LOWPASS_ALPHA_PERCENT;
     distanceMm[sensor] = (uint16_t)((filtered + 50U) / 100U);
   }
-
 }
 
 static bool TofSensors_ReturnResults(uint16_t *leftMm, uint16_t *midMm, uint16_t *rightMm,

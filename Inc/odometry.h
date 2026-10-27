@@ -46,4 +46,10 @@ HAL_StatusTypeDef Odometry_GetState(Odometry_State *state);
  */
 HAL_StatusTypeDef Odometry_GetWheelSpeedMmS(Encoder_Motor motor, float *speed_mm_s);
 
+/*
+ * Đặt lại tọa độ về (0,0) và heading về ODOMETRY_INITIAL_HEADING_DEG (90 độ),
+ * đồng thời cập nhật lại snapshot encoder làm mốc mới.
+ */
+HAL_StatusTypeDef Odometry_Reset(void);
+
 #endif

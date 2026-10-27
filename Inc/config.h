@@ -95,6 +95,16 @@
 #define ODOMETRY_RIGHT_ENCODER_SIGN 1
 #define ODOMETRY_INITIAL_HEADING_DEG 90.0f
 
+/* ── CẤU HÌNH KẾT HỢP GYROZ VÀO ODOMETRY ─────────────────────────────────────
+ * ODOMETRY_USE_GYRO_FUSION:
+ *   1 = BẬT áp dụng GyroZ vào Odometry (kết hợp góc quay chuẩn xác)
+ *   0 = TẮT GyroZ, Odometry chạy thuần 100% Encoder bánh xe
+ * ODOMETRY_GYRO_WEIGHT:
+ *   Hệ số trọng số của GyroZ (0.60f = 60% GyroZ, 40% Encoder)
+ * ──────────────────────────────────────────────────────────────────────────── */
+#define ODOMETRY_USE_GYRO_FUSION          1U
+#define ODOMETRY_GYRO_WEIGHT              0.60f
+
 /* Board pin assignments. */
 
 #define LED1 GPIO_PIN_13

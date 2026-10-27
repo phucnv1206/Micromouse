@@ -124,7 +124,7 @@ HAL_StatusTypeDef UartProtocol_Init(void) {
 }
 
 /*
- * Gửi một khung TX 16 byte bằng DMA. Chỉ chấp nhận khung bắt đầu bằng AA BB.
+ * Gửi một khung TX 32 byte bằng DMA. Chỉ chấp nhận khung bắt đầu bằng AA BB.
  * Sao chép dữ liệu vào tx_frame tĩnh vì DMA tiếp tục đọc bộ đệm sau khi hàm
  * trả về; nhờ đó dữ liệu không phụ thuộc vào thời gian sống của bộ đệm bên gọi.
  */
@@ -141,9 +141,9 @@ HAL_StatusTypeDef UartProtocol_Send(const uint8_t frame[UART_PROTOCOL_TX_FRAME_S
 }
 
 /*
- * Đóng gói telemetry thành khung TX 16 byte:
- * AA BB, sau đó lần lượt là data1..data7 dạng int16_t big-endian.
- * Tổng cộng 2 + 7*2 = 16 byte.
+ * Đóng gói telemetry thành khung TX 32 byte:
+ * AA BB, sau đó lần lượt là data1..data15 dạng int16_t big-endian.
+ * Tổng cộng 2 + 15*2 = 32 byte.
  * Việc truyền thực tế được giao cho UartProtocol_Send().
  */
 HAL_StatusTypeDef UartProtocol_SendTelemetry(const UartProtocol_Telemetry *telemetry) {
@@ -163,6 +163,14 @@ HAL_StatusTypeDef UartProtocol_SendTelemetry(const UartProtocol_Telemetry *telem
   UartProtocol_WriteInt16BE(&frame[10], telemetry->data5);
   UartProtocol_WriteInt16BE(&frame[12], telemetry->data6);
   UartProtocol_WriteInt16BE(&frame[14], telemetry->data7);
+  UartProtocol_WriteInt16BE(&frame[16], telemetry->data8);
+  UartProtocol_WriteInt16BE(&frame[18], telemetry->data9);
+  UartProtocol_WriteInt16BE(&frame[20], telemetry->data10);
+  UartProtocol_WriteInt16BE(&frame[22], telemetry->data11);
+  UartProtocol_WriteInt16BE(&frame[24], telemetry->data12);
+  UartProtocol_WriteInt16BE(&frame[26], telemetry->data13);
+  UartProtocol_WriteInt16BE(&frame[28], telemetry->data14);
+  UartProtocol_WriteInt16BE(&frame[30], telemetry->data15);
 
   return UartProtocol_Send(frame);
 }

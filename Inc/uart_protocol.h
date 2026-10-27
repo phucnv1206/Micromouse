@@ -4,7 +4,7 @@
 #include "stm32f4xx_hal.h"
 
 #define UART_PROTOCOL_HEADER_SIZE 2U
-#define UART_PROTOCOL_TX_FRAME_SIZE 16U
+#define UART_PROTOCOL_TX_FRAME_SIZE 32U
 #define UART_PROTOCOL_RX_FRAME_SIZE 8U
 #define UART_PROTOCOL_HEADER_BYTE_1 0xAAU
 #define UART_PROTOCOL_HEADER_BYTE_2 0xBBU
@@ -23,7 +23,7 @@ typedef struct {
   uint8_t data3;
 } UartProtocol_RxFrame;
 
-/* Bảy giá trị debug int16_t, tuần tự hóa big-endian sau header AA BB. */
+/* Mười lăm giá trị debug int16_t, tuần tự hóa big-endian sau header AA BB (tổng cộng 32 byte). */
 typedef struct {
   int16_t data1;
   int16_t data2;
@@ -32,13 +32,21 @@ typedef struct {
   int16_t data5;
   int16_t data6;
   int16_t data7;
+  int16_t data8;
+  int16_t data9;
+  int16_t data10;
+  int16_t data11;
+  int16_t data12;
+  int16_t data13;
+  int16_t data14;
+  int16_t data15;
 } UartProtocol_Telemetry;
 
 HAL_StatusTypeDef UartProtocol_Init(void);
 /* Khởi tạo bộ phân tích/hàng đợi RX và bắt đầu nhận UART bằng ngắt. */
-/* Gửi một khung TX đủ 16 byte; hai byte đầu bắt buộc là header AA BB. */
+/* Gửi một khung TX đủ 32 byte; hai byte đầu bắt buộc là header AA BB. */
 HAL_StatusTypeDef UartProtocol_Send(const uint8_t frame[UART_PROTOCOL_TX_FRAME_SIZE]);
-/* Đóng gói 7 trường telemetry theo big-endian sau header rồi gửi khung TX. */
+/* Đóng gói 15 trường telemetry theo big-endian sau header rồi gửi khung TX. */
 HAL_StatusTypeDef UartProtocol_SendTelemetry(const UartProtocol_Telemetry *telemetry);
 /* Lấy khung RX kế tiếp, parse data1/data2 thành số int16_t có dấu. */
 HAL_StatusTypeDef UartProtocol_Receive(UartProtocol_RxFrame *frame);

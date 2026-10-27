@@ -51,5 +51,10 @@ int8_t TofSensors_GetLastL1Error(void);
 /* Giai đoạn và cảm biến cuối cùng đang khởi tạo; giữ nguyên khi init thất bại. */
 TofSensors_InitStage TofSensors_GetLastInitStage(void);
 TofXshut_Sensor TofSensors_GetLastInitSensor(void);
+/*
+ * Ánh xạ/hiệu chuẩn khoảng cách đo thô (raw) theo bảng thực nghiệm dưới 500mm.
+ * Trên 500mm giữ nguyên giá trị rawMm.
+ */
+uint16_t TofSensors_CalibrateDistance(TofXshut_Sensor sensor, uint16_t rawMm);
 
 #endif

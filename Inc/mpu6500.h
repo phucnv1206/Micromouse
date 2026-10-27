@@ -16,6 +16,8 @@
 HAL_StatusTypeDef Mpu6500_Init(void);
 HAL_StatusTypeDef Mpu6500_Update(void);
 float Mpu6500_GetGyroZ(void);
+float Mpu6500_GetGyroBias(void);
+HAL_StatusTypeDef Mpu6500_Calibrate(uint16_t sample_count);
 
 /* Các hàm chẩn đoán MPU6500 */
 int16_t Mpu6500_GetInitStep(void);
