@@ -88,6 +88,9 @@ static void readUart(void){
   } while (receiveStatus == HAL_OK);
 }
 
+
+
+
 static void loop(void) {
   readUart();
 

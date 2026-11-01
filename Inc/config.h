@@ -54,7 +54,13 @@
 #define TOF_SENSOR_LEFT_I2C_ADDRESS 0x32U
 #define TOF_OUTER_MEASUREMENT_TIMING_BUDGET_US 25000U /* Budget trái/phải; mục tiêu khoảng 40 Hz. */
 /* Trọng số mẫu mới của low-pass ToF (1..100%); giá trị lớn phản hồi nhanh hơn. */
-#define TOF_LOWPASS_ALPHA_PERCENT 30U
+#define TOF_LOWPASS_ALPHA_PERCENT 50U
+/* Ngưỡng phát hiện bước nhảy khoảng cách ToF (mm):
+ * Khi khoảng cách thay đổi lớn hơn ngưỡng này (ví dụ > 50mm do rẽ góc, gặp ngã ba, cửa thông):
+ * bỏ qua low-pass và gán trực tiếp giá trị mới để triệt tiêu hoàn toàn độ trễ.
+ * Chỉ lọc làm mượt khi biến thiên nhỏ hơn hoặc bằng ngưỡng (khử nhiễu rung khi chạy dọc tường).
+ * Đặt 0 để tắt (luôn luôn lọc low-pass). */
+#define TOF_LOWPASS_STEP_THRESHOLD_MM 50U
 /* VL53L1X ULD chỉ hỗ trợ budget rời rạc (20 ms là mức gần 25 ms nhất). */
 #define TOF_MID_TIMING_BUDGET_MS 20U
 #define TOF_MID_INTER_MEASUREMENT_MS 25U

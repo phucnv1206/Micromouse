@@ -143,9 +143,22 @@ static void TofSensors_UpdateFilteredDistance(TofXshut_Sensor sensor, uint16_t m
     distanceMm[sensor] = calibratedMm;
     distanceFilterInitialized[sensor] = 1U;
   } else {
-    uint32_t filtered = (uint32_t)distanceMm[sensor] * (100U - TOF_LOWPASS_ALPHA_PERCENT)
-        + (uint32_t)calibratedMm * TOF_LOWPASS_ALPHA_PERCENT;
-    distanceMm[sensor] = (uint16_t)((filtered + 50U) / 100U);
+    uint16_t prevMm = distanceMm[sensor];
+    uint16_t deltaMm = (calibratedMm > prevMm) ? (calibratedMm - prevMm) : (prevMm - calibratedMm);
+
+#if defined(TOF_LOWPASS_STEP_THRESHOLD_MM) && (TOF_LOWPASS_STEP_THRESHOLD_MM > 0U)
+    /* Nếu biến thiên khoảng cách lớn hơn ngưỡng (bước nhảy khoảng cách):
+     * Không làm mượt, gán trực tiếp để triệt tiêu độ trễ khi qua góc/cửa */
+    if (deltaMm > TOF_LOWPASS_STEP_THRESHOLD_MM) {
+      distanceMm[sensor] = calibratedMm;
+    } else
+#endif
+    {
+      /* Biến thiên nhỏ (nhiễu vi sai/rung nhẹ): lọc làm mượt qua low-pass */
+      uint32_t filtered = (uint32_t)prevMm * (100U - TOF_LOWPASS_ALPHA_PERCENT)
+          + (uint32_t)calibratedMm * TOF_LOWPASS_ALPHA_PERCENT;
+      distanceMm[sensor] = (uint16_t)((filtered + 50U) / 100U);
+    }
   }
 }
 

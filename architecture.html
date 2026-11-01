@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sơ Đồ Hệ Thống Phần Mềm Xe Micromouse Tự Hành</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    body {
+      background-color: #f8fafc;
+      color: #0f172a;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    .diagram-svg text {
+      user-select: none;
+    }
+  </style>
+</head>
+<body class="p-6">
+
+  <!-- TOP BAR -->
+  <div class="max-w-[1440px] mx-auto flex flex-wrap items-center justify-between pb-4 border-b border-slate-300 gap-4 mb-6">
+    <div>
+      <h1 class="text-xl font-bold text-slate-900 tracking-tight">
+        SƠ ĐỒ HỆ THỐNG
+      </h1>
+      <p class="text-xs text-slate-600 mt-0.5"
+      </p>
+    </div>
+
+    <!-- ACTION BUTTONS -->
+    <div class="flex items-center gap-2">
+      <button onclick="exportAsPNG()" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg shadow transition flex items-center gap-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+        Tải Ảnh Sơ Đồ (PNG)
+      </button>
+      <button onclick="exportAsSVG()" class="px-4 py-2 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 text-xs font-semibold rounded-lg shadow-sm transition flex items-center gap-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+        Tải Vector (SVG)
+      </button>
+    </div>
+  </div>
+
+  <!-- SVG DIAGRAM CONTAINER -->
+  <div class="max-w-[1440px] mx-auto bg-white border border-slate-300 rounded-xl shadow-sm p-6 overflow-x-auto">
+    
+    <svg id="systemDiagram" class="diagram-svg w-full min-w-[1320px]" viewBox="0 0 1360 840" xmlns="http://www.w3.org/2000/svg">
+      
+      <!-- DEFINITIONS: ARROWS -->
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#1e293b" />
+        </marker>
+        <marker id="arr-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#0284c7" />
+        </marker>
+        <marker id="arr-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#059669" />
+        </marker>
+        <marker id="arr-gold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#ca8a04" />
+        </marker>
+      </defs>
+
+      <!-- ======================================================== -->
+      <!-- SECTION 1: CẢM BIẾN (SENSING) - CỘT 1 (x=60..250)         -->
+      <!-- ======================================================== -->
+      <rect x="45" y="70" width="220" height="345" rx="6" fill="#f8fafc" stroke="#475569" stroke-width="1.5" stroke-dasharray="4 3" />
+      <text x="60" y="93" font-size="12" font-weight="bold" fill="#334155">CẢM BIẾN ĐO LƯỜNG</text>
+
+      <!-- 1.1 ToF Sensors (HÀNG ĐẦU TIÊN) -->
+      <g id="box-tof">
+        <rect x="60" y="105" width="190" height="75" rx="4" fill="#ffffff" stroke="#1e293b" stroke-width="1.5" />
+        <text x="155" y="132" text-anchor="middle" font-size="12" font-weight="bold" fill="#0f172a">Cảm Biến ToF Laser</text>
+        <text x="155" y="152" text-anchor="middle" font-size="10" fill="#64748b">3 hướng: Trái - Trước - Phải</text>
+        <text x="155" y="168" text-anchor="middle" font-size="9.5" fill="#0284c7" font-weight="bold">Đo khoảng cách vách tường</text>
+      </g>
+
+      <!-- 1.2 Encoders (HÀNG 2) -->
+      <g id="box-encoders">
+        <rect x="60" y="210" width="190" height="70" rx="4" fill="#ffffff" stroke="#1e293b" stroke-width="1.5" />
+        <text x="155" y="238" text-anchor="middle" font-size="12" font-weight="bold" fill="#0f172a">Encoders Bánh Xe</text>
+        <text x="155" y="258" text-anchor="middle" font-size="10" fill="#64748b">Đo quãng đường & vận tốc</text>
+      </g>
+
+      <!-- 1.3 IMU Gyro (HÀNG 3) -->
+      <g id="box-imu">
+        <rect x="60" y="310" width="190" height="70" rx="4" fill="#ffffff" stroke="#1e293b" stroke-width="1.5" />
+        <text x="155" y="338" text-anchor="middle" font-size="12" font-weight="bold" fill="#0f172a">Cảm Biến IMU (Gyro)</text>
+        <text x="155" y="358" text-anchor="middle" font-size="10" fill="#64748b">Đo vận tốc góc quay thân xe</text>
+      </g>
+
+      <!-- ======================================================== -->
+      <!-- SECTION 2: ƯỚC LƯỢNG TRẠNG THÁI - CỘT 2 (x=330..550)    -->
+      <!-- ======================================================== -->
+      <rect x="315" y="70" width="250" height="345" rx="6" fill="#f8fafc" stroke="#475569" stroke-width="1.5" stroke-dasharray="4 3" />
+      <text x="330" y="93" font-size="12" font-weight="bold" fill="#334155">ƯỚC LƯỢNG TRẠNG THÁI</text>
+
+      <!-- 2.1 Bộ Lọc ToF (HÀNG ĐẦU, THẲNG HÀNG VỚI TOF SENSOR) -->
+      <g id="box-tof-filter">
+        <rect x="330" y="105" width="220" height="75" rx="4" fill="#ffffff" stroke="#1e293b" stroke-width="1.5" />
+        <text x="440" y="132" text-anchor="middle" font-size="12" font-weight="bold" fill="#0f172a">Bộ Lọc Nhiễu ToF</text>
+        <text x="440" y="152" text-anchor="middle" font-size="10" fill="#475569">Làm mượt & Tính lệch tâm ô</text>
+        <text x="440" y="168" text-anchor="middle" font-size="9" fill="#64748b">Nhận biết ngã rẽ & vách cản</text>
+      </g>
+
+      <!-- 2.2 Odometry & Sensor Fusion -->
+      <g id="box-fusion">
+        <rect x="330" y="210" width="220" height="170" rx="4" fill="#ffffff" stroke="#1e293b" stroke-width="1.5" />
+        <text x="440" y="238" text-anchor="middle" font-size="12" font-weight="bold" fill="#0f172a">Odometry & Hợp Nhất</text>
+        <text x="440" y="256" text-anchor="middle" font-size="12" font-weight="bold" fill="#0f172a">Cảm Biến (Sensor Fusion)</text>
+        <text x="440" y="282" text-anchor="middle" font-size="10" fill="#475569">Kết hợp xung Encoder & Gyro</text>
+        <text x="440" y="302" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#0284c7">Xuất vị trí (x, y) & góc quay θ</text>
+        <text x="440" y="322" text-anchor="middle" font-size="9.5" fill="#15803d">Triệt tiêu hoàn toàn trượt bánh</text>
+      </g>
+
+      <!-- ======================================================== -->
+      <!-- SECTION 3: GIẢI THUẬT MÊ CUNG - CỘT 3 (x=630..860)      -->
+      <!-- ======================================================== -->
+      <rect x="615" y="70" width="260" height="345" rx="6" fill="#f8fafc" stroke="#475569" stroke-width="1.5" stroke-dasharray="4 3" />
+      <text x="630" y="93" font-size="12" font-weight="bold" fill="#334155">GIẢI THUẬT MÊ CUNG</text>
+
+      <!-- 3.1 Bản Đồ Mê Cung (HÀNG ĐẦU, THẲNG HÀNG VỚI BỘ LỌC TOF) -->
+      <g id="box-maze-map">
+        <rect x="630" y="105" width="230" height="75" rx="4" fill="#ffffff" stroke="#1e293b" stroke-width="1.5" />
+        <text x="745" y="135" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#0f172a">Bản Đồ Mê Cung</text>
+        <text x="745" y="157" text-anchor="middle" font-size="10" fill="#475569">Lưu trữ trạng thái các ô & vách tường</text>
+      </g>
+
+      <!-- 3.2 Thuật Toán Tìm Đường -->
+      <g id="box-pathfinding">
+        <rect x="630" y="210" width="230" height="70" rx="4" fill="#ffffff" stroke="#1e293b" stroke-width="1.5" />
+        <text x="745" y="238" text-anchor="middle" font-size="12" font-weight="bold" fill="#0f172a">Thuật Toán Tìm Đường</text>
+        <text x="745" y="258" text-anchor="middle" font-size="10" fill="#475569">Tính đường ngắn nhất đến đích</text>
+        <text x="745" y="272" text-anchor="middle" font-size="9" fill="#64748b">Điều hướng khám phá từng bước</text>
+      </g>
+
+      <!-- 3.3 Tối Ưu Fast-Run -->
+      <g id="box-fastrun">
+        <rect x="630" y="310" width="230" height="85" rx="4" fill="#ffffff" stroke="#1e293b" stroke-width="1.5" />
+        <text x="745" y="336" text-anchor="middle" font-size="12" font-weight="bold" fill="#0f172a">Tối Ưu Chạy Nhanh</text>
+        <text x="745" y="354" text-anchor="middle" font-size="12" font-weight="bold" fill="#0f172a">(Fast-Run)</text>
+        <text x="745" y="375" text-anchor="middle" font-size="10" font-weight="bold" fill="#ca8a04">Làm mượt góc cua vát chéo 45°</text>
+      </g>
+
+      <!-- ======================================================== -->
+      <!-- SECTION 4: ĐIỀU KHIỂN CHUYỂN ĐỘNG - GỌN GÀNG (x=45..565)  -->
+      <!-- ======================================================== -->
+      <rect x="45" y="450" width="520" height="350" rx="6" fill="#f8fafc" stroke="#475569" stroke-width="1.5" stroke-dasharray="4 3" />
+      <text x="60" y="473" font-size="12" font-weight="bold" fill="#334155">ĐIỀU KHIỂN CHUYỂN ĐỘNG & CƠ CẤU CHẤP HÀNH</text>
+
+      <!-- 4.1 Bộ Điều Khiển PID -->
+      <g id="box-pid">
+        <rect x="60" y="495" width="490" height="95" rx="4" fill="#ffffff" stroke="#1e293b" stroke-width="1.5" />
+        <text x="305" y="525" text-anchor="middle" font-size="13" font-weight="bold" fill="#0f172a">Bộ Điều Khiển Vị Trí & Hướng (PID)</text>
+        <text x="305" y="550" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#0284c7">• Khóa góc chạy thẳng  • Chạy đến điểm mục tiêu</text>
+        <text x="305" y="572" text-anchor="middle" font-size="9.5" fill="#475569">Tự động giữ xe chạy chính giữa 2 vách tường dựa vào độ lệch ToF</text>
+      </g>
+
+      <!-- 4.2 Mạch Công Suất Động Cơ -->
+      <g id="box-driver">
+        <rect x="60" y="630" width="225" height="115" rx="4" fill="#ffffff" stroke="#1e293b" stroke-width="1.5" />
+        <text x="172" y="660" text-anchor="middle" font-size="12" font-weight="bold" fill="#0f172a">Mạch Công Suất</text>
+        <text x="172" y="678" text-anchor="middle" font-size="12" font-weight="bold" fill="#0f172a">Điều Khiển Động Cơ</text>
+        <text x="172" y="705" text-anchor="middle" font-size="10" fill="#475569">Phát xung PWM vi sai</text>
+        <text x="172" y="736" text-anchor="middle" font-size="9" fill="#dc2626">Tự ngắt khi gặp sự cố</text>
+      </g>
+
+      <!-- 4.3 Động Cơ DC & Bánh Xe -->
+      <g id="box-motors">
+        <rect x="325" y="630" width="225" height="115" rx="4" fill="#ffffff" stroke="#1e293b" stroke-width="1.5" />
+        <text x="437" y="670" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#0f172a">Động Cơ DC & Bánh Xe</text>
+        <text x="437" y="700" text-anchor="middle" font-size="10.5" fill="#475569">Tạo chuyển động vật lý</text>
+        <text x="437" y="722" text-anchor="middle" font-size="10" fill="#64748b">Bánh xe Trái & Bánh xe Phải</text>
+      </g>
+
+      <!-- ======================================================== -->
+      <!-- SECTION 5: TRUYỀN THÔNG (CỘT PHẢI - x=915..1310)         -->
+      <!-- ======================================================== -->
+      <rect x="915" y="70" width="395" height="740" rx="6" fill="#f8fafc" stroke="#475569" stroke-width="1.5" stroke-dasharray="4 3" />
+      <text x="930" y="93" font-size="12" font-weight="bold" fill="#334155">TRUYỀN THÔNG & GIAO DIỆN MÁY TÍNH</text>
+
+      <!-- 5.1 ESP32 Wireless Bridge -->
+      <g id="box-esp32">
+        <rect x="935" y="105" width="355" height="95" rx="6" fill="#f0f9ff" stroke="#0284c7" stroke-width="2" />
+        <text x="1112" y="135" text-anchor="middle" font-size="14" font-weight="bold" fill="#0369a1">Module ESP32</text>
+        <text x="1112" y="155" text-anchor="middle" font-size="12" font-weight="bold" fill="#0c4a6e">(Cầu Nối Wi-Fi Không Dây)</text>
+        <text x="1112" y="180" text-anchor="middle" font-size="10" fill="#475569">• Truyền phát dữ liệu xe lên máy tính & nhận lệnh điều khiển</text>
+      </g>
+
+      <!-- 5.2 Web Dashboard -->
+      <g id="box-dashboard">
+        <rect x="935" y="250" width="355" height="540" rx="6" fill="#ffffff" stroke="#1e293b" stroke-width="2" />
+        <text x="1112" y="280" text-anchor="middle" font-size="14" font-weight="bold" fill="#0f172a">Máy Tính / Web Dashboard</text>
+        <text x="1112" y="300" text-anchor="middle" font-size="11" fill="#64748b">(Giao diện giám sát & điều khiển thời gian thực)</text>
+
+        <!-- Feature 1: SLAM -->
+        <rect x="955" y="325" width="315" height="90" rx="4" fill="#f8fafc" stroke="#94a3b8" />
+        <text x="1112" y="355" text-anchor="middle" font-size="12" font-weight="bold" fill="#0f172a">Bản Đồ</text>
+        <text x="1112" y="377" text-anchor="middle" font-size="10" fill="#475569">Vẽ bản đồ lưới không gian thời gian thực</text>
+        <text x="1112" y="395" text-anchor="middle" font-size="9.5" fill="#0284c7">Cập nhật vách tường từ tia quét laser ToF</text>
+
+        <!-- Feature 2: Telemetry -->
+        <rect x="955" y="435" width="315" height="90" rx="4" fill="#f8fafc" stroke="#94a3b8" />
+        <text x="1112" y="465" text-anchor="middle" font-size="12" font-weight="bold" fill="#0f172a">Giám Sát Vị Trí & Trạng Thái</text>
+        <text x="1112" y="487" text-anchor="middle" font-size="10" fill="#475569">Hiển thị tọa độ (x, y), hướng quay xe θ</text>
+        <text x="1112" y="505" text-anchor="middle" font-size="9.5" fill="#64748b">Vận tốc di chuyển, điện áp pin thực tế</text>
+
+        <!-- Feature 3: Target Nav -->
+        <rect x="955" y="545" width="315" height="110" rx="4" fill="#f0fdf4" stroke="#16a34a" />
+        <text x="1112" y="575" text-anchor="middle" font-size="12" font-weight="bold" fill="#15803d">Điều Khiển Điểm Đến (🎯)</text>
+        <text x="1112" y="598" text-anchor="middle" font-size="10" fill="#166534">Click chuột chọn vị trí bất kỳ trên bản đồ</text>
+        <text x="1112" y="618" text-anchor="middle" font-size="10" fill="#475569">Xe tự động tìm đường và phi thẳng tới đích</text>
+        <text x="1112" y="635" text-anchor="middle" font-size="9.5" fill="#15803d">Gửi lệnh chạy / dừng trực tiếp từ máy tính</text>
+
+        <text x="1112" y="700" text-anchor="middle" font-size="10" fill="#64748b">Giao tiếp qua giao thức WebSocket hai chiều tốc độ cao</text>
+      </g>
+
+      <!-- ======================================================== -->
+      <!-- TOÀN BỘ CÁC ĐƯỜNG MŨI TÊN (ĐI TRONG KHOẢNG TRỐNG HOÀN TOÀN)-->
+      <!-- ======================================================== -->
+
+      <!-- 1. [ToF Sensor] ➔ [Bộ Lọc ToF] -->
+      <path d="M 250 142 L 330 142" fill="none" stroke="#1e293b" stroke-width="2" marker-end="url(#arr)" />
+
+      <!-- 2. [Bộ Lọc ToF] ➔ [Bản Đồ Mê Cung] -->
+      <path d="M 550 142 L 630 142" fill="none" stroke="#0284c7" stroke-width="2" marker-end="url(#arr-blue)" />
+      <rect x="555" y="125" width="70" height="18" rx="3" fill="#ffffff" stroke="#cbd5e1" />
+      <text x="590" y="137" text-anchor="middle" font-size="8.5" font-weight="bold" fill="#0284c7">Cập nhật vách</text>
+
+      <!-- 3. [Encoders] ➔ [Odometry] -->
+      <path d="M 250 245 L 330 245" fill="none" stroke="#1e293b" stroke-width="1.8" marker-end="url(#arr)" />
+
+      <!-- 4. [IMU] ➔ [Odometry] -->
+      <path d="M 250 345 L 330 345" fill="none" stroke="#1e293b" stroke-width="1.8" marker-end="url(#arr)" />
+
+      <!-- 5. [Bản Đồ Mê Cung] ➔ [Thuật Toán Floodfill] -->
+      <path d="M 745 180 L 745 210" fill="none" stroke="#1e293b" stroke-width="2" marker-end="url(#arr)" />
+
+      <!-- 6. [Thuật Toán Floodfill] ➔ [Tối Ưu Fast-Run] -->
+      <path d="M 745 280 L 745 310" fill="none" stroke="#ca8a04" stroke-width="2" marker-end="url(#arr-gold)" />
+
+      <!-- 7. [Fast-Run] ➔ [Bộ Điều Khiển PID] (Đi qua hành lang trống y=440..495) -->
+      <path d="M 745 395 L 745 445 L 490 445 L 490 495" fill="none" stroke="#ca8a04" stroke-width="2" marker-end="url(#arr-gold)" />
+      <rect x="560" y="436" width="130" height="18" rx="3" fill="#ffffff" stroke="#fde047" />
+      <text x="625" y="448" text-anchor="middle" font-size="9" font-weight="bold" fill="#a16207">Tọa độ mục tiêu kế tiếp</text>
+
+      <!-- 8. [Odometry] ➔ [Bộ Điều Khiển PID] (Đường thẳng đứng trong khe hở y=380..495) -->
+      <path d="M 390 380 L 390 495" fill="none" stroke="#059669" stroke-width="2" marker-end="url(#arr-green)" />
+      <rect x="330" y="425" width="120" height="18" rx="3" fill="#ffffff" stroke="#bbf7d0" />
+      <text x="390" y="437" text-anchor="middle" font-size="8.5" font-weight="bold" fill="#15803d">Vị trí & góc (x, y, θ)</text>
+
+      <!-- 9. [Bộ Điều Khiển PID] ➔ [Mạch Công Suất] -->
+      <path d="M 172 590 L 172 630" fill="none" stroke="#1e293b" stroke-width="2" marker-end="url(#arr)" />
+
+      <!-- 10. [Mạch Công Suất] ➔ [Động Cơ DC] -->
+      <path d="M 285 687 L 325 687" fill="none" stroke="#1e293b" stroke-width="2" marker-end="url(#arr)" />
+
+      <!-- 11. Bánh Xe phản hồi về Encoders (Vòng ngoài cùng bên trái) -->
+      <path d="M 437 745 L 437 780 L 25 780 L 25 245 L 60 245" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4 4" marker-end="url(#arr)" />
+      <text x="32" y="515" font-size="9" fill="#64748b" transform="rotate(-90 32 515)">Bánh xe lăn tạo xung đếm hồi tiếp về Encoders</text>
+
+      <!-- 12. Dữ liệu trạng thái xe gửi sang ESP32 (Hành lang trên cùng y=45) -->
+      <path d="M 440 105 L 440 45 L 1112 45 L 1112 105" fill="none" stroke="#059669" stroke-width="2" marker-end="url(#arr-green)" />
+      <rect x="680" y="36" width="220" height="18" rx="3" fill="#ffffff" stroke="#86efac" />
+      <text x="790" y="48" text-anchor="middle" font-size="9" font-weight="bold" fill="#15803d">Dữ liệu xe & ToF gửi qua UART lên ESP32</text>
+
+      <!-- 13. [ESP32] ⮂ [Web Dashboard] -->
+      <path d="M 1090 200 L 1090 250" fill="none" stroke="#0284c7" stroke-width="2" marker-end="url(#arr-blue)" />
+      <path d="M 1130 250 L 1130 200" fill="none" stroke="#059669" stroke-width="2" marker-end="url(#arr-green)" />
+      <rect x="1075" y="215" width="70" height="18" rx="3" fill="#ffffff" stroke="#7dd3fc" />
+      <text x="1110" y="227" text-anchor="middle" font-size="9" font-weight="bold" fill="#0284c7">Sóng Wi-Fi</text>
+
+      <!-- 14. Lệnh từ Web Dashboard gửi về PID: HOÀN TOÀN TRÊN NỀN TRẮNG THOÁNG ĐÃNG -->
+      <!-- Đi ngang thẳng từ x=935 sang x=550 ở y=545, không cắt bất kỳ chữ hay ô nào! -->
+      <path d="M 935 545 L 550 545" fill="none" stroke="#16a34a" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#arr-green)" />
+      <rect x="670" y="535" width="180" height="20" rx="3" fill="#ffffff" stroke="#86efac" />
+      <text x="760" y="549" text-anchor="middle" font-size="9.5" font-weight="bold" fill="#166534">Lệnh điều hướng mục tiêu từ xa (🎯)</text>
+
+    </svg>
+
+  </div>
+
+  <!-- JAVASCRIPT: EXPORT UTILITIES -->
+  <script>
+    function exportAsSVG() {
+      const svg = document.getElementById('systemDiagram');
+      const svgData = new XMLSerializer().serializeToString(svg);
+      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const svgUrl = URL.createObjectURL(svgBlob);
+      const downloadLink = document.createElement('a');
+      downloadLink.href = svgUrl;
+      downloadLink.download = 'micromouse_software_architecture.svg';
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+    }
+
+    function exportAsPNG() {
+      const svg = document.getElementById('systemDiagram');
+      const svgData = new XMLSerializer().serializeToString(svg);
+      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const URL = window.URL || window.webkitURL || window;
+      const blobURL = URL.createObjectURL(svgBlob);
+      
+      const image = new Image();
+      image.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1360 * 2;
+        canvas.height = 840 * 2;
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.scale(2, 2);
+        context.drawImage(image, 0, 0);
+        
+        const png = canvas.toDataURL('image/png');
+        const downloadLink = document.createElement('a');
+        downloadLink.href = png;
+        downloadLink.download = 'micromouse_software_architecture.png';
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+      };
+      image.src = blobURL;
+    }
+  </script>
+</body>
+</html>
