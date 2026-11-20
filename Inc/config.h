@@ -6,18 +6,6 @@
 /* Scheduler rates and servo-style motor pulse settings. */
 #define CONTROL_LOOP_FREQUENCY_HZ 100U
 #define UART_TELEMETRY_FREQUENCY_HZ 40U
-#ifndef ODOMETRY_ENABLED
-#define ODOMETRY_ENABLED 1U
-#endif
-#ifndef ENCODER_ENABLED
-#define ENCODER_ENABLED 1U
-#endif
-#ifndef TOF_ENABLED
-#define TOF_ENABLED 1U
-#endif
-#ifndef MPU6500_ENABLED
-#define MPU6500_ENABLED 1U
-#endif
 
 #define ODOMETRY_UPDATE_FREQUENCY_HZ 1000U
 #define ODOMETRY_TIMER_COUNTER_HZ 1000000U
@@ -89,17 +77,33 @@
 #define MPU6500_WHO_AM_I_VAL             0x70U
 #define MPU6500_I2C_CLOCK_SPEED_HZ       800000U
 #define MPU6500_GYRO_FULL_SCALE_DPS      250
-#define MPU6500_GYRO_LOWPASS_ALPHA_PERCENT 20U
+#define MPU6500_GYRO_LOWPASS_ALPHA_PERCENT 100U /* 100% = tắt lọc IIR mềm, tránh trễ 6ms (DLPF phần cứng 41Hz đã lọc) */
+/*
+ * Hệ số hiệu chuẩn tỉ lệ đo góc con quay hồi chuyển (Gyro Scale Calibration Factor):
+ * Cảm biến MEMS MPU6500 có dung sai độ nhạy xuất xưởng ±2~3%.
+ * Thực tế đo đạc: khi xe quay 360° thì odometry tính ra 364° (sai số +1.11%).
+ * Hệ số bù chuẩn hóa: 360.0f / 364.0f ≈ 0.98901099f.
+ */
+#define MPU6500_GYRO_SCALE_FACTOR        (360.0f / 364.0f)
 
 /* Wheel and encoder values used by odometry. */
 #define ENCODER_COUNT_MAX 10000U
 #define ENCODER_STEPS_PER_MOTOR_REV 28U
 #define ODOMETRY_GEAR_RATIO 99.0f
 #define ODOMETRY_WHEEL_DIAMETER_MM 44.5f
-#define ODOMETRY_WHEEL_TRACK_MM 77.0f
+/*
+ * Khoảng cách hai bánh hiệu dụng (Effective Wheel Track):
+ * Khoảng cách cơ khí đo được là 77.0mm. Khi xe quay tại chỗ, tiếp xúc lốp
+ * và vi trượt bề mặt tạo ra vệt quay hiệu dụng:
+ * L_eff = 77.0mm * (364.0 / 360.0) ≈ 77.8556mm.
+ * Hiệu chuẩn giá trị này giúp tính toán góc từ Encoder chuẩn xác 360° khi quay đủ 360°.
+ */
+#define ODOMETRY_WHEEL_TRACK_MM          (77.0f * (364.0f / 360.0f))
 #define ODOMETRY_LEFT_ENCODER_SIGN -1
 #define ODOMETRY_RIGHT_ENCODER_SIGN 1
 #define ODOMETRY_INITIAL_HEADING_DEG 90.0f
+#define ODOMETRY_INITIAL_X_MM 300.0f
+#define ODOMETRY_INITIAL_Y_MM -45.0f
 
 /* ── CẤU HÌNH KẾT HỢP GYROZ VÀO ODOMETRY ─────────────────────────────────────
  * ODOMETRY_USE_GYRO_FUSION:
@@ -167,13 +171,9 @@ void Config_USART2_GPIO_Init(void);
 void Config_USART2_GPIO_DeInit(void);
 
 /* Kiểm tra chéo các giá trị cấu hình sau khi toàn bộ macro đã được khai báo. */
-#if ODOMETRY_ENABLED && !ENCODER_ENABLED
-#error "ODOMETRY_ENABLED requires ENCODER_ENABLED"
-#endif
-
 #if CONTROL_LOOP_FREQUENCY_HZ < 1U || CONTROL_LOOP_FREQUENCY_HZ > 1000U
 #error "CONTROL_LOOP_FREQUENCY_HZ must be between 1 and 1000"
-#endif
+#endif /* MICROMOUSE_CONFIG_H */
 
 #if ODOMETRY_UPDATE_FREQUENCY_HZ < 1U || ODOMETRY_UPDATE_FREQUENCY_HZ > ODOMETRY_TIMER_COUNTER_HZ
 #error "ODOMETRY_UPDATE_FREQUENCY_HZ must be between 1 and ODOMETRY_TIMER_COUNTER_HZ"

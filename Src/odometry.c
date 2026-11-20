@@ -5,8 +5,6 @@
 #include "mpu6500.h"
 #include <math.h>
 
-#if ODOMETRY_ENABLED
-
 #define ODOMETRY_PI 3.14159265358979323846f
 #define ODOMETRY_TWO_PI (2.0f * ODOMETRY_PI)
 
@@ -56,8 +54,8 @@ HAL_StatusTypeDef Odometry_Init(void) {
     return HAL_ERROR;
   }
 
-  odometry_state.x_mm = 0.0f;
-  odometry_state.y_mm = 0.0f;
+  odometry_state.x_mm = ODOMETRY_INITIAL_X_MM;
+  odometry_state.y_mm = ODOMETRY_INITIAL_Y_MM;
   odometry_state.heading_deg = ODOMETRY_INITIAL_HEADING_DEG;
   odometry_state.linear_mm_s = 0.0f;
   odometry_state.angular_rad_s = 0.0f;
@@ -70,17 +68,14 @@ HAL_StatusTypeDef Odometry_Init(void) {
   }
   speed_window_sample_count = 0U;
 
-  float initial_bias = 0.0f;
-#if MPU6500_ENABLED
-  initial_bias = Mpu6500_GetGyroBias();
-#endif
+  float initial_bias = Mpu6500_GetGyroBias();
   KalmanOdometry_Init(ODOMETRY_INITIAL_HEADING_DEG, initial_bias);
 
   odometry_initialized = 1U;
   return HAL_OK;
 }
 
-HAL_StatusTypeDef Odometry_Update(void) {
+HAL_StatusTypeDef Odometry_Update(uint16_t elapsed_ticks) {
   Encoder_Snapshot snapshot;
   float distance_mm[ENCODER_MOTOR_COUNT];
   float wheel_circumference_mm;
@@ -92,6 +87,9 @@ HAL_StatusTypeDef Odometry_Update(void) {
   float distance_center_mm;
   const int32_t count_modulus = (int32_t)ENCODER_COUNT_MAX + 1;
   const int32_t max_unambiguous_delta = count_modulus / 2;
+
+  uint16_t ticks = (elapsed_ticks > 0U) ? elapsed_ticks : 1U;
+  const float dt_s = (float)ticks / (float)ODOMETRY_UPDATE_FREQUENCY_HZ;
 
   /*
    * Cần có snapshot trước đó để tính delta count và cần tần số gọi cố định
@@ -134,11 +132,10 @@ HAL_StatusTypeDef Odometry_Update(void) {
   }
 
   /*
-   * Tốc độ encoder có độ phân giải thô nếu chỉ dùng một mẫu. Gom nhiều mẫu
-   * rồi chia theo tổng thời gian để giảm lượng tử; tốc độ giữ nguyên giữa
-   * hai lần hoàn tất cửa sổ trung bình.
+   * Tích lũy đúng số tick thời gian thực để vận tốc bánh không bị tính sai lệch
+   * khi vòng lặp chính bị nghẽn (elapsed_ticks > 1).
    */
-  speed_window_sample_count++;
+  speed_window_sample_count += ticks;
   if (speed_window_sample_count >= ODOMETRY_SPEED_AVERAGE_SAMPLES) {
     for (uint32_t i = 0U; i < ENCODER_MOTOR_COUNT; i++) {
       odometry_state.wheel_angular_rad_s[i] = Odometry_GetWheelAngularSpeed(speed_window_steps[i], speed_window_sample_count);
@@ -152,7 +149,6 @@ HAL_StatusTypeDef Odometry_Update(void) {
   right_distance_mm = distance_mm[ENCODER_RIGHT];
   distance_center_mm = (right_distance_mm + left_distance_mm) * 0.5f;
 
-  const float dt_s = 1.0f / (float)ODOMETRY_UPDATE_FREQUENCY_HZ;
   /* Biến thiên góc hướng tính từ hai encoder (đơn vị độ) */
   float enc_heading_delta_deg = ((right_distance_mm - left_distance_mm) / ODOMETRY_WHEEL_TRACK_MM) * (180.0f / ODOMETRY_PI);
   float enc_omega_dps = enc_heading_delta_deg / dt_s;
@@ -160,15 +156,11 @@ HAL_StatusTypeDef Odometry_Update(void) {
   float heading_before_deg = odometry_state.heading_deg;
   heading_before_rad = heading_before_deg * (ODOMETRY_PI / 180.0f);
 
-  float gyro_z_dps = 0.0f;
-  uint8_t gyro_available = 0U;
-#if MPU6500_ENABLED
-  gyro_z_dps = Mpu6500_GetGyroZ();
-  gyro_available = (Mpu6500_GetReadCount() > 0U) ? 1U : 0U;
-#endif
+  float gyro_z_dps = Mpu6500_GetGyroZ();
+  uint8_t gyro_available = (Mpu6500_GetReadCount() > 0U) ? 1U : 0U;
 
   if (gyro_available != 0U) {
-    /* 1. Bước dự báo Kalman theo chu kỳ dt_s */
+    /* 1. Bước dự báo Kalman theo chu kỳ dt_s thực tế */
     KalmanOdometry_Predict(dt_s);
 
     /* 2. Cập nhật đo lường từ GyroZ (Quy ước: Gyro dương -> theta tăng) */
@@ -202,22 +194,13 @@ HAL_StatusTypeDef Odometry_Update(void) {
   }
 
   /*
-   * Tích hợp vị trí (x, y) trên mặt phẳng phẳng dựa trên góc hướng đã được
-   * kết hợp chính xác từ Kalman filter:
+   * Tích phân vị trí (x, y) bằng công thức điểm giữa (Midpoint Integration - 2nd Order Runge-Kutta):
+   * Ở chu kỳ ms, góc quay mỗi bước rất nhỏ, công thức điểm giữa cực kỳ chuẩn xác
+   * và không bị mất độ chính xác (catastrophic cancellation) của float32 như khi lấy sinf(after)-sinf(before).
    */
-  if (heading_delta_rad > -0.000001f && heading_delta_rad < 0.000001f) {
-    /* Chạy gần thẳng: dùng góc trung bình giữa mẫu */
-    float mid_heading_rad = heading_before_rad + heading_delta_rad * 0.5f;
-    odometry_state.x_mm += distance_center_mm * cosf(mid_heading_rad);
-    odometry_state.y_mm += distance_center_mm * sinf(mid_heading_rad);
-  } else {
-    /* Khi đang quay, tích phân cung tròn chính xác giữa hai mẫu odometry */
-    float heading_after_rad = heading_before_rad + heading_delta_rad;
-    float turn_radius_mm = distance_center_mm / heading_delta_rad;
-
-    odometry_state.x_mm += turn_radius_mm * (sinf(heading_after_rad) - sinf(heading_before_rad));
-    odometry_state.y_mm -= turn_radius_mm * (cosf(heading_after_rad) - cosf(heading_before_rad));
-  }
+  float mid_heading_rad = heading_before_rad + heading_delta_rad * 0.5f;
+  odometry_state.x_mm += distance_center_mm * cosf(mid_heading_rad);
+  odometry_state.y_mm += distance_center_mm * sinf(mid_heading_rad);
 
   odometry_state.linear_mm_s = (odometry_state.wheel_linear_mm_s[ENCODER_LEFT] + odometry_state.wheel_linear_mm_s[ENCODER_RIGHT]) * 0.5f;
   return HAL_OK;
@@ -249,8 +232,8 @@ HAL_StatusTypeDef Odometry_Reset(void) {
     return HAL_ERROR;
   }
 
-  odometry_state.x_mm = 0.0f;
-  odometry_state.y_mm = 0.0f;
+  odometry_state.x_mm = ODOMETRY_INITIAL_X_MM;
+  odometry_state.y_mm = ODOMETRY_INITIAL_Y_MM;
   odometry_state.heading_deg = ODOMETRY_INITIAL_HEADING_DEG;
   odometry_state.linear_mm_s = 0.0f;
   odometry_state.angular_rad_s = 0.0f;
@@ -266,39 +249,3 @@ HAL_StatusTypeDef Odometry_Reset(void) {
   KalmanOdometry_Reset(ODOMETRY_INITIAL_HEADING_DEG);
   return HAL_OK;
 }
-
-#else
-
-HAL_StatusTypeDef Odometry_Init(void) {
-  /* Giữ API hợp lệ khi biên dịch tắt odometry. */
-  return HAL_OK;
-}
-
-HAL_StatusTypeDef Odometry_Update(void) {
-  return HAL_OK;
-}
-
-HAL_StatusTypeDef Odometry_GetState(Odometry_State *state) {
-  if (state == NULL) {
-    return HAL_ERROR;
-  }
-
-  /* Khi tính năng bị tắt, trả một trạng thái 0 có định nghĩa rõ ràng. */
-  *state = (Odometry_State){0};
-  return HAL_OK;
-}
-
-HAL_StatusTypeDef Odometry_GetWheelSpeedMmS(Encoder_Motor motor, float *speed_mm_s) {
-  if (speed_mm_s == NULL || motor >= ENCODER_MOTOR_COUNT) {
-    return HAL_ERROR;
-  }
-
-  *speed_mm_s = 0.0f;
-  return HAL_OK;
-}
-
-HAL_StatusTypeDef Odometry_Reset(void) {
-  return HAL_OK;
-}
-
-#endif

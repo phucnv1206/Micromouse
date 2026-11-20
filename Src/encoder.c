@@ -2,8 +2,6 @@
 #include "encoder.h"
 #include "config.h"
 
-#if ENCODER_ENABLED
-
 /*
  * Bảng giải mã quadrature: index = (trạng thái AB trước << 2) | AB hiện tại.
  * Hai pha A/B lệch pha nhau; chuyển sang trạng thái kế tiếp cộng 1, chuyển
@@ -136,25 +134,3 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
     encoder_count[motor] = encoder_count[motor] == 0U ? ENCODER_COUNT_MAX : encoder_count[motor] - 1U;
   }
 }
-
-#else
-
-HAL_StatusTypeDef Encoder_Init(void) {
-  /* API rỗng để phần còn lại của firmware vẫn khởi tạo được khi encoder bị tắt. */
-  return HAL_OK;
-}
-
-HAL_StatusTypeDef Encoder_GetSnapshot(Encoder_Snapshot *snapshot) {
-  if (snapshot == NULL) {
-    return HAL_ERROR;
-  }
-
-  /* Trả snapshot 0 để phía gọi không cần nhánh riêng khi tắt encoder. */
-  for (uint32_t i = 0U; i < ENCODER_MOTOR_COUNT; i++) {
-    snapshot->count[i] = 0U;
-  }
-
-  return HAL_OK;
-}
-
-#endif

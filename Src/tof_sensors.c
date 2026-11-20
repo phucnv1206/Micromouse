@@ -387,15 +387,6 @@ bool TofSensors_UpdateDistances(uint16_t *leftMm, uint16_t *midMm, uint16_t *rig
     return false;
   }
 
-#if !TOF_ENABLED
-  *leftMm = 0U;
-  *midMm = 0U;
-  *rightMm = 0U;
-  *leftValid = false;
-  *midValid = false;
-  *rightValid = false;
-  return false;
-#else
   *leftValid = false;
   *midValid = false;
   *rightValid = false;
@@ -486,7 +477,6 @@ bool TofSensors_UpdateDistances(uint16_t *leftMm, uint16_t *midMm, uint16_t *rig
   }
 
   return TofSensors_ReturnResults(leftMm, midMm, rightMm, true);
-#endif
 }
 
 VL53L0X_Error TofSensors_GetLastError(void) {

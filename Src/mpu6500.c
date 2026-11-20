@@ -2,8 +2,6 @@
 #include "mpu6500.h"
 #include "config.h"
 
-#if MPU6500_ENABLED
-
 /*
  * Thanh ghi MPU6500 sử dụng trong module.
  */
@@ -160,10 +158,14 @@ HAL_StatusTypeDef Mpu6500_Calibrate(uint16_t sample_count) {
   uint16_t valid_samples = 0U;
 
   for (uint16_t i = 0U; i < sample_count; i++) {
-    uint8_t raw[6];
-    if (Mpu6500_ReadRegs(MPU6500_REG_GYRO_XOUT_H, raw, 6U, MPU6500_I2C_TIMEOUT_MS) == HAL_OK) {
-      int16_t raw_z = (int16_t)(((uint16_t)raw[4] << 8U) | (uint16_t)raw[5]);
+    uint8_t raw[2];
+    if (Mpu6500_ReadRegs(MPU6500_REG_GYRO_ZOUT_H, raw, 2U, MPU6500_I2C_TIMEOUT_MS) == HAL_OK) {
+      int16_t raw_z = (int16_t)(((uint16_t)raw[0] << 8U) | (uint16_t)raw[1]);
+#ifdef MPU6500_GYRO_SCALE_FACTOR
+      bias_sum += ((float)raw_z / MPU6500_GYRO_SENSITIVITY) * MPU6500_GYRO_SCALE_FACTOR;
+#else
       bias_sum += (float)raw_z / MPU6500_GYRO_SENSITIVITY;
+#endif
       valid_samples++;
     }
     HAL_Delay(2U);
@@ -176,7 +178,7 @@ HAL_StatusTypeDef Mpu6500_Calibrate(uint16_t sample_count) {
 }
 
 HAL_StatusTypeDef Mpu6500_Update(void) {
-  uint8_t raw[6];
+  uint8_t raw[2];
   int16_t raw_gyro_z;
   float gyroZ_raw_dps;
 
@@ -185,23 +187,32 @@ HAL_StatusTypeDef Mpu6500_Update(void) {
   }
 
   /*
-   * Đọc burst 6 byte từ GYRO_XOUT_H (0x43) đến GYRO_ZOUT_L (0x48).
-   * Byte 4 và 5 tương ứng với trục Z: raw[4] = ZOUT_H, raw[5] = ZOUT_L.
+   * [FIX 2.4] Chỉ đọc 2 byte trục Z từ MPU6500_REG_GYRO_ZOUT_H (0x47)
+   * thay vì burst 6 byte từ 0x43, giảm thời gian chiếm bus I2C từ ~36µs xuống ~12µs.
    */
-  if (Mpu6500_ReadRegs(MPU6500_REG_GYRO_XOUT_H, raw, 6U, MPU6500_I2C_TIMEOUT_MS) != HAL_OK) {
+  if (Mpu6500_ReadRegs(MPU6500_REG_GYRO_ZOUT_H, raw, 2U, MPU6500_I2C_TIMEOUT_MS) != HAL_OK) {
     mpu_last_hal_error = HAL_I2C_GetError(&hi2c2);
     return HAL_ERROR;
   }
 
-  /* Ghép byte 4 và 5 thành số nguyên 16-bit có dấu */
-  raw_gyro_z = (int16_t)(((uint16_t)raw[4] << 8U) | (uint16_t)raw[5]);
+  /* Ghép byte 0 (ZOUT_H) và byte 1 (ZOUT_L) thành số nguyên 16-bit có dấu */
+  raw_gyro_z = (int16_t)(((uint16_t)raw[0] << 8U) | (uint16_t)raw[1]);
 
-  /* Quy đổi sang °/s theo hệ số nhạy của dải đo đã chọn */
+  /* Quy đổi sang °/s theo hệ số nhạy của dải đo đã chọn và hệ số scale hiệu chuẩn */
+#ifdef MPU6500_GYRO_SCALE_FACTOR
+  gyroZ_raw_dps = ((float)raw_gyro_z / MPU6500_GYRO_SENSITIVITY) * MPU6500_GYRO_SCALE_FACTOR;
+#else
   gyroZ_raw_dps = (float)raw_gyro_z / MPU6500_GYRO_SENSITIVITY;
+#endif
 
-  /* Bộ lọc thông thấp IIR bậc một */
+  /* Bộ lọc: DLPF phần cứng 41Hz (delay 5.9ms) đã xử lý triệt để nhiễu,
+   * gán trực tiếp raw để không bị cộng thêm trễ IIR phần mềm (~4-6ms). */
+#if MPU6500_GYRO_LOWPASS_ALPHA_PERCENT >= 100U
+  gyroZ_filtered = gyroZ_raw_dps;
+#else
   gyroZ_filtered = MPU6500_LOWPASS_ALPHA * gyroZ_raw_dps
                  + (1.0f - MPU6500_LOWPASS_ALPHA) * gyroZ_filtered;
+#endif
 
   mpu_read_count++;
   return HAL_OK;
@@ -226,41 +237,4 @@ uint32_t Mpu6500_GetReadCount(void) {
 uint32_t Mpu6500_GetLastHalError(void) {
   return mpu_last_hal_error;
 }
-
-#else /* MPU6500_ENABLED == 0 */
-
-HAL_StatusTypeDef Mpu6500_Init(void) {
-  return HAL_OK;
-}
-
-HAL_StatusTypeDef Mpu6500_Update(void) {
-  return HAL_OK;
-}
-
-float Mpu6500_GetGyroZ(void) {
-  return 0.0f;
-}
-
-float Mpu6500_GetGyroBias(void) {
-  return 0.0f;
-}
-
-HAL_StatusTypeDef Mpu6500_Calibrate(uint16_t sample_count) {
-  (void)sample_count;
-  return HAL_OK;
-}
-
-int16_t Mpu6500_GetInitStep(void) {
-  return 0;
-}
-
-uint32_t Mpu6500_GetReadCount(void) {
-  return 0;
-}
-
-uint32_t Mpu6500_GetLastHalError(void) {
-  return 0;
-}
-
-#endif /* MPU6500_ENABLED */
 

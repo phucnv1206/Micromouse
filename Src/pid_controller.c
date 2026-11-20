@@ -8,9 +8,8 @@
 #define KP_ROT_ANG    0.5f   /* Hệ số tỉ lệ P  */
 #define KD_ROT_ANG    0.01f   /* Giảm chấn vi phân vận tốc góc */
 #define CRUISE_PWM    32.0f   /* Tốc độ hành trình khi quay */
-#define MAX_ANG_PWM   45.0f   /* Tốc độ xoay tối đa an toàn */
 #define MIN_ANG_PWM   14.0f   /* Bù deadzone ma sát tĩnh của bánh xe */
-#define ANGLE_TOL_DEG 2.0f    /* Dung sai góc chấp nhận được (2.0 độ theo yêu cầu) */
+#define ANGLE_TOL_DEG 3.5f    /* Dung sai góc chấp nhận được (3.5 độ để chống kẹt xoay khi pin yếu/sàn ma sát) */
 #define ANGLE_TIMEOUT 5000U   /* Thời gian tối đa bảo vệ cho một lệnh xoay góc (ms) */
 #define MANUAL_WATCHDOG_TIMEOUT_MS 250U /* Lớp bảo vệ phần cứng STM32: Quá 250ms không có nhịp UART -> Dừng khẩn cấp */
 
@@ -106,7 +105,15 @@ void Motion_ProcessCommand(uint8_t cmd, int16_t data1, int16_t data2) {
    */
   if (currentMode == MOTION_MODE_ROTATE_ANGLE || currentMode == MOTION_MODE_NAV_TO_POINT) {
     if (cmd == activeCommand) {
-      return; /* Đang thực thi dở, bỏ qua gói trùng */
+      if (cmd == CMD_NAV_TO_POINT) {
+        /* Nếu nhận được tọa độ mục tiêu MỚI khác tọa độ đang chạy, PHẢI chấp nhận chuyển hướng ngay! */
+        if (data1 == (int16_t)navTargetX && data2 == (int16_t)navTargetY) {
+          return; /* Đúng là gói trùng tọa độ cũ, bỏ qua */
+        }
+        /* Tọa độ mới -> Cho phép lọt xuống dưới để cập nhật navTargetX/Y ngay lập tức! */
+      } else {
+        return; /* Đang thực thi dở lệnh xoay góc, bỏ qua gói trùng */
+      }
     }
     if (cmd == CMD_EMERGENCY_STOP) {
       Motion_Stop();
@@ -163,9 +170,9 @@ void Motion_ProcessCommand(uint8_t cmd, int16_t data1, int16_t data2) {
             straightTargetHeadingDeg = KalmanOdometry_GetHeading();
             straightLockActive = true;
           }
+          /* [FIX 3.4] Chỉ cập nhật tốc độ nền, KHÔNG gọi RunMotor trực tiếp.
+           * Motion_Update() sẽ xuất PWM kèm bù PID để tránh giật xe. */
           straightBaseSpeed = r;
-          RunMotorRight(r);
-          RunMotorLeft(l);
         } else {
           /* Lệnh quay tay A/D (r != l): xuất PWM vi sai trực tiếp không khóa góc */
           straightLockActive = false;
@@ -309,15 +316,12 @@ void Motion_Update(float dt_s) {
       if (correction < -MAX_STRAIGHT_CORRECTION) correction = -MAX_STRAIGHT_CORRECTION;
 
       int16_t rPwm, lPwm;
-      if (straightBaseSpeed > 0) {
-        /* Chạy tiến (W): lệch phải (error > 0, corr > 0) -> tăng phải, giảm trái để quẹo trái về trục */
-        rPwm = (int16_t)roundf(straightBaseSpeed + correction);
-        lPwm = (int16_t)roundf(straightBaseSpeed - correction);
-      } else {
-        /* Chạy lùi (S): lệch phải (error > 0, corr > 0) -> lùi phải mạnh hơn, lùi trái nhẹ hơn */
-        rPwm = (int16_t)roundf(straightBaseSpeed - correction);
-        lPwm = (int16_t)roundf(straightBaseSpeed + correction);
-      }
+      /* [FIX 1.2] Công thức thống nhất cho cả tiến lẫn lùi:
+       * Khi lùi (straightBaseSpeed < 0), correction dương nghĩa là mũi xe đang lệch phải,
+       * cần tăng PWM bánh phải (bớt lùi) và giảm PWM bánh trái (lùi nhiều hơn) -> đúng chiều.
+       */
+      rPwm = (int16_t)roundf((float)straightBaseSpeed + correction);
+      lPwm = (int16_t)roundf((float)straightBaseSpeed - correction);
 
       if (rPwm > 100) rPwm = 100;
       if (rPwm < -100) rPwm = -100;
@@ -407,9 +411,11 @@ void Motion_Update(float dt_s) {
       float errorAngle = NormalizeAngleDiff(navTargetHeadingDeg, currentHeading);
       float absErr = fabsf(errorAngle);
 
-      if (absErr <= ANGLE_TOL_DEG && fabsf(currentOmega) <= 4.0f) {
+      uint32_t turnElapsed = HAL_GetTick() - navStartTick;
+      /* Điều kiện hoàn thành xoay: Góc đạt dung sai cho phép và vận tốc góc đủ nhỏ */
+      if (absErr <= ANGLE_TOL_DEG && fabsf(currentOmega) <= 6.0f) {
         navTurnSettleCount++;
-        if (navTurnSettleCount >= 6U) {
+        if (navTurnSettleCount >= 4U) {
           RunMotorRight(0);
           RunMotorLeft(0);
           navStage = NAV_STAGE_DRIVE_STRAIGHT;
@@ -417,6 +423,26 @@ void Motion_Update(float dt_s) {
         }
       } else {
         navTurnSettleCount = 0U;
+      }
+
+      /* Bảo vệ quá thời gian xoay (Timeout 3.5s): Không tự tiện chuyển sang chạy thẳng nếu lệch góc! */
+      if (turnElapsed > 3500U) {
+        if (absErr <= 8.0f && fabsf(currentOmega) <= 8.0f) {
+          /* Chấp nhận sai số nhẹ nếu đã rất gần góc đích */
+          RunMotorRight(0);
+          RunMotorLeft(0);
+          navStage = NAV_STAGE_DRIVE_STRAIGHT;
+          return;
+        } else {
+          /* Lệch hướng quá lớn: Báo lỗi và dừng xe an toàn, không chạy thẳng đâm tường */
+          RunMotorRight(0);
+          RunMotorLeft(0);
+          currentMode = MOTION_MODE_STOP;
+          activeCommand = CMD_NAV_TO_POINT;
+          commandStatus = STATUS_ERROR;
+          statusTimestamp = HAL_GetTick();
+          return;
+        }
       }
 
       float p_term = KP_ROT_ANG * errorAngle;
@@ -453,7 +479,7 @@ void Motion_Update(float dt_s) {
       float totalDy = navTargetY - navStartY;
       float proj = totalDx * dx + totalDy * dy;
 
-      if (remainingDist <= NAV_ARRIVE_TOL_MM || proj <= 0.0f) {
+      if (remainingDist <= NAV_ARRIVE_TOL_MM || (remainingDist <= 60.0f && proj <= 0.0f)) {
         RunMotorRight(0);
         RunMotorLeft(0);
         currentMode = MOTION_MODE_STOP;
@@ -470,11 +496,18 @@ void Motion_Update(float dt_s) {
         if (speed < NAV_MIN_PWM) speed = NAV_MIN_PWM;
       }
 
-      /* Dynamic target heading (Pursuit): luôn ngắm thẳng vào tọa độ đích */
-      float directAngleRad = atan2f(dy, dx);
-      float directAngleDeg = directAngleRad * (180.0f / 3.141592653589793f);
-      while (directAngleDeg >= 360.0f) directAngleDeg -= 360.0f;
-      while (directAngleDeg < 0.0f)   directAngleDeg += 360.0f;
+      /* Dynamic target heading (Pursuit): luôn ngắm thẳng vào tọa độ đích;
+       * khi khoảng cách < 35mm (sắp tới đích), giữ nguyên navTargetHeadingDeg
+       * để tránh góc atan2 bị nhảy giật do sai số mm ở cực cận. */
+      float directAngleDeg;
+      if (remainingDist < 35.0f) {
+        directAngleDeg = navTargetHeadingDeg;
+      } else {
+        float directAngleRad = atan2f(dy, dx);
+        directAngleDeg = directAngleRad * (180.0f / 3.141592653589793f);
+        while (directAngleDeg >= 360.0f) directAngleDeg -= 360.0f;
+        while (directAngleDeg < 0.0f)   directAngleDeg += 360.0f;
+      }
 
       float currentHeading = KalmanOdometry_GetHeading();
       float currentOmega = KalmanOdometry_GetAngularVelocity();

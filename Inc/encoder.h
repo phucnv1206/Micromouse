@@ -22,7 +22,7 @@ typedef struct {
 HAL_StatusTypeDef Encoder_Init(void);
 /*
  * Sao chép bộ đếm trái/phải thành một snapshot nhất quán, không để ngắt EXTI
- * thay đổi bộ đếm giữa lúc đọc. Nếu ENCODER_ENABLED=0 thì snapshot bằng 0.
+ * thay đổi bộ đếm giữa lúc đọc.
  * Trả HAL_ERROR nếu con trỏ snapshot là NULL.
  */
 HAL_StatusTypeDef Encoder_GetSnapshot(Encoder_Snapshot *snapshot);

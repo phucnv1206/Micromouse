@@ -13,9 +13,6 @@ UART_HandleTypeDef huart2;
 DMA_HandleTypeDef hdma_usart2_rx;
 DMA_HandleTypeDef hdma_usart2_tx;
 
-
-DMA_HandleTypeDef hdma_memtomem_dma2_stream0;
-
 static void Config_SystemClock_Init(void) {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
@@ -69,7 +66,6 @@ static void Config_GPIO_Init(void) {
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(BUTTON1_Port, &GPIO_InitStruct);
 
-#if ENCODER_ENABLED
   GPIO_InitStruct.Pin = EN_RIGHT_B|EN_RIGHT_A;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -86,30 +82,11 @@ static void Config_GPIO_Init(void) {
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
-#endif
 }
 
 static void Config_DMA_Init(void) {
 
-  __HAL_RCC_DMA2_CLK_ENABLE();
   __HAL_RCC_DMA1_CLK_ENABLE();
-
-  hdma_memtomem_dma2_stream0.Instance = DMA2_Stream0;
-  hdma_memtomem_dma2_stream0.Init.Channel = DMA_CHANNEL_0;
-  hdma_memtomem_dma2_stream0.Init.Direction = DMA_MEMORY_TO_MEMORY;
-  hdma_memtomem_dma2_stream0.Init.PeriphInc = DMA_PINC_ENABLE;
-  hdma_memtomem_dma2_stream0.Init.MemInc = DMA_MINC_ENABLE;
-  hdma_memtomem_dma2_stream0.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
-  hdma_memtomem_dma2_stream0.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
-  hdma_memtomem_dma2_stream0.Init.Mode = DMA_NORMAL;
-  hdma_memtomem_dma2_stream0.Init.Priority = DMA_PRIORITY_LOW;
-  hdma_memtomem_dma2_stream0.Init.FIFOMode = DMA_FIFOMODE_ENABLE;
-  hdma_memtomem_dma2_stream0.Init.FIFOThreshold = DMA_FIFO_THRESHOLD_FULL;
-  hdma_memtomem_dma2_stream0.Init.MemBurst = DMA_MBURST_SINGLE;
-  hdma_memtomem_dma2_stream0.Init.PeriphBurst = DMA_PBURST_SINGLE;
-  if (HAL_DMA_Init(&hdma_memtomem_dma2_stream0) != HAL_OK) {
-    Error_Handler();
-  }
 
   HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
@@ -284,7 +261,6 @@ void Config_Init(void) {
 }
 
 HAL_StatusTypeDef Config_OdometryTimer_Init(void) {
-#if ODOMETRY_ENABLED
   if (SystemCoreClock < ODOMETRY_TIMER_COUNTER_HZ || SystemCoreClock % ODOMETRY_TIMER_COUNTER_HZ != 0U) {
     return HAL_ERROR;
   }
@@ -298,18 +274,15 @@ HAL_StatusTypeDef Config_OdometryTimer_Init(void) {
 
   HAL_NVIC_SetPriority(TIM3_IRQn, 1U, 0U);
   HAL_NVIC_EnableIRQ(TIM3_IRQn);
-#endif
 
   return HAL_OK;
 }
 
 void Config_OdometryTimer_Start(void) {
-#if ODOMETRY_ENABLED
   TIM3->CNT = 0U;
   TIM3->SR = 0U;
   TIM3->DIER |= TIM_DIER_UIE;
   TIM3->CR1 |= TIM_CR1_CEN;
-#endif
 }
 
 void Config_I2C1_GPIO_Init(void) {

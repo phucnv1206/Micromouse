@@ -125,12 +125,17 @@ HAL_StatusTypeDef UartProtocol_Init(void) {
 
 /*
  * Gửi một khung TX 32 byte bằng DMA. Chỉ chấp nhận khung bắt đầu bằng AA BB.
- * Sao chép dữ liệu vào tx_frame tĩnh vì DMA tiếp tục đọc bộ đệm sau khi hàm
- * trả về; nhờ đó dữ liệu không phụ thuộc vào thời gian sống của bộ đệm bên gọi.
+ * [FIX 1.5] Kiểm tra DMA TX đang rảnh trước khi ghi đè tx_frame để tránh
+ * hỏng gói tin đang được DMA truyền dở.
  */
 HAL_StatusTypeDef UartProtocol_Send(const uint8_t frame[UART_PROTOCOL_TX_FRAME_SIZE]) {
   if (frame == NULL || frame[0] != UART_PROTOCOL_HEADER_BYTE_1 || frame[1] != UART_PROTOCOL_HEADER_BYTE_2) {
     return HAL_ERROR;
+  }
+
+  /* Nếu DMA TX đang bận, bỏ qua gói này (trả HAL_BUSY) thay vì đè lên buffer */
+  if (huart2.gState != HAL_UART_STATE_READY) {
+    return HAL_BUSY;
   }
 
   for (uint32_t i = 0U; i < UART_PROTOCOL_TX_FRAME_SIZE; i++) {
@@ -276,13 +281,21 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 
 /*
  * Callback HAL khi UART2 phát hiện lỗi nhận:
- * đánh dấu bộ nhận đang rảnh và lưu trạng thái/mã lỗi để ứng dụng kiểm tra,
- * sau đó có thể gọi UartProtocol_StartReceive() để thử khởi động lại.
+ * [FIX 1.4] Xóa cờ lỗi Overrun/Framing/Noise, đặt lại trạng thái và khởi động
+ * lại bộ nhận ngay lập tức để không mất lệnh điều khiển vĩnh viễn.
  */
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
   if (huart->Instance == USART2) {
     rx_active = 0U;
     rx_status = HAL_ERROR;
     rx_error_code = huart->ErrorCode;
+
+    /* Xóa các cờ lỗi UART phổ biến */
+    __HAL_UART_CLEAR_OREFLAG(huart);
+    __HAL_UART_CLEAR_FEFLAG(huart);
+    __HAL_UART_CLEAR_NEFLAG(huart);
+
+    /* Khởi động lại nhận ngay để phục hồi tự động */
+    (void)UartProtocol_StartReceive();
   }
 }

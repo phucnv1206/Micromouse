@@ -9,6 +9,15 @@
 #define UART_PROTOCOL_HEADER_BYTE_1 0xAAU
 #define UART_PROTOCOL_HEADER_BYTE_2 0xBBU
 
+/* Mã lệnh điều khiển từ ESP32 sang STM32 */
+#define CMD_MANUAL_DRIVE     0x00U
+#define CMD_ROTATE_ANGLE     0x03U
+#define CMD_RESET_ODOM       0x04U
+#define CMD_EMERGENCY_STOP   0x05U
+#define CMD_NAV_TO_POINT     0x06U
+#define CMD_DUMP_MAP         0x07U  /* Trích xuất bản đồ 60x40 đã quét */
+#define CMD_SET_OBSTACLES    0x08U  /* Thông báo 2 vị trí cản ngẫu nhiên (data1=slotTop, data2=slotBottom) */
+
 /*
  * Các trường RX tương ứng khung dây 8 byte:
  * header1, header2, command, data1 (int16 big-endian),

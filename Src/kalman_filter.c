@@ -26,13 +26,11 @@
 static KalmanOdometry_State kf;
 static float current_dt_s = 0.01f;
 static float latest_gyro_z_raw = 0.0f;
-static float gyro_filtered_dps = 0.0f;
 
 void KalmanOdometry_Init(float initial_heading_deg, float initial_gyro_bias) {
   kf.theta_deg = initial_heading_deg;
   kf.omega_dps = 0.0f;
   kf.gyro_bias_dps = initial_gyro_bias;
-  gyro_filtered_dps = 0.0f;
   latest_gyro_z_raw = 0.0f;
   current_dt_s = 0.01f;
 
@@ -51,7 +49,6 @@ void KalmanOdometry_Init(float initial_heading_deg, float initial_gyro_bias) {
 void KalmanOdometry_Reset(float initial_heading_deg) {
   kf.theta_deg = initial_heading_deg;
   kf.omega_dps = 0.0f;
-  gyro_filtered_dps = 0.0f;
   /* Giữ nguyên gyro_bias_dps đã học được */
   kf.P[0][0] = 0.1f;
   kf.P[1][1] = 0.1f;
@@ -67,49 +64,34 @@ void KalmanOdometry_Predict(float dt_s) {
 void KalmanOdometry_UpdateGyro(float gyro_z_dps) {
   if (!kf.is_initialized) return;
   latest_gyro_z_raw = gyro_z_dps;
-
-  /*
-   * 1. Khử zero-rate bias của MPU6500
-   * 2. Lọc thông thấp nhẹ IIR (alpha = 0.35) để triệt tiêu hoàn toàn rung chấn vi cơ từ motor
-   */
-  float unbiased = gyro_z_dps - kf.gyro_bias_dps;
-  gyro_filtered_dps += 0.35f * (unbiased - gyro_filtered_dps);
+  /* [FIX 3.3] Bỏ bộ lọc IIR phần mềm alpha=0.35 vì DLPF phần cứng 41 Hz đã lọc đủ.
+   * Dùng thẳng giá trị unbiased để giảm trễ pha tích lũy cho vòng PID xoay. */
 }
 
 void KalmanOdometry_UpdateEncoder(float enc_omega_dps, bool slip_detected) {
   if (!kf.is_initialized) return;
 
-  (void)slip_detected; /* Không can thiệp theo chống trượt theo yêu cầu */
+  (void)slip_detected;
 
   /*
-   * ================= NGUYÊN TẮC KẾT HỢP GÓC =================
-   * Chỉ khi nào góc theta suy từ Encoder THAY ĐỔI (|enc_omega_dps| > 0)
-   * thì mới kết hợp với GyroZ để xác định góc quay chính xác!
-   * Khi Encoder không quay (theta từ encoder không đổi, e.g. xe đứng yên hoặc chạy thẳng tắp):
-   * Khóa góc theta, không để GyroZ gây trôi hay rung giật.
+   * MPU6500 Gyro Z đo trực tiếp vận tốc góc với độ phân giải cao và không bị lượng tử hóa.
+   * Encoder ở chu kỳ 1 ms có độ phân giải thô (chỉ nhảy 0 hoặc ±37.5°/s), nên khi xe quay
+   * chậm ở cuối cú xoay, encoder không có xung ở hầu hết các chu kỳ 1 ms.
+   * Để triệt tiêu hoàn toàn hiện tượng suy hao góc (chỉ đạt 44% ở 5°/s) và chống overshoot,
+   * góc quay tích phân được dẫn xuất trực tiếp từ Gyro Z (unbiased).
    */
-  if (fabsf(enc_omega_dps) < 0.001f) {
-    kf.omega_dps = 0.0f;
-    return;
-  }
-
-  /*
-   * Khi góc theta từ Encoder đang thay đổi:
-   * 1. Biến thiên góc từ Encoder trong chu kỳ: delta_theta_enc = enc_omega_dps * dt
-   * 2. Biến thiên góc từ GyroZ trong chu kỳ: delta_theta_gyro = (gyro_z - bias) * dt
-   * 3. Kết hợp xác định góc thực tế nằm trong khoảng đó:
-   *    Ví dụ (Gyro 40%, Encoder 60%): Encoder quay 30°, Gyro tích phân ra 29°:
-   *    fused_delta = 0.60 * 30° + 0.40 * 29° = 29.6°
-   */
-  float enc_delta_deg = enc_omega_dps * current_dt_s;
   float gyro_unbiased = latest_gyro_z_raw - kf.gyro_bias_dps;
   float gyro_delta_deg = gyro_unbiased * current_dt_s;
 
-  float fused_delta_deg = (KALMAN_WEIGHT_ENCODER * enc_delta_deg) +
-                          (KALMAN_WEIGHT_GYRO    * gyro_delta_deg);
+#if defined(ODOMETRY_USE_GYRO_FUSION) && (ODOMETRY_USE_GYRO_FUSION == 0)
+  float fused_delta_deg = enc_omega_dps * current_dt_s;
+  kf.omega_dps = enc_omega_dps;
+#else
+  float fused_delta_deg = gyro_delta_deg;
+  kf.omega_dps = gyro_unbiased;
+#endif
 
   /* Cập nhật vận tốc góc và góc hướng tổng hợp */
-  kf.omega_dps = fused_delta_deg / current_dt_s;
   kf.theta_deg += fused_delta_deg;
 
   /* Chuẩn hóa góc về khoảng [0, 360) độ */
@@ -136,10 +118,11 @@ void KalmanOdometry_UpdateZeroVelocity(void) {
    * 3. Tự động học thích nghi bias GyroZ theo nhiệt độ môi trường
    */
   kf.omega_dps = 0.0f;
-  gyro_filtered_dps = 0.0f;
 
   float bias_diff = latest_gyro_z_raw - kf.gyro_bias_dps;
-  kf.gyro_bias_dps += 0.02f * bias_diff;
+  /* [FIX 3.3] Giảm hệ số học bias từ 0.02f (tau≈50ms) xuống 0.001f (tau≈1s)
+   * để tránh kéo bias sai khi xe vừa dừng mà thân còn rung nhẹ. */
+  kf.gyro_bias_dps += 0.001f * bias_diff;
 
   if (kf.gyro_bias_dps > KALMAN_BIAS_LIMIT_DPS) {
     kf.gyro_bias_dps = KALMAN_BIAS_LIMIT_DPS;

@@ -29,12 +29,13 @@ typedef struct{
 HAL_StatusTypeDef Odometry_Init(void);
 /*
  * Gọi định kỳ tại ODOMETRY_UPDATE_FREQUENCY_HZ sau Odometry_Init().
+ * elapsed_ticks: Số nhịp ngắt timer đã tích lũy (bình thường là 1, >1 nếu main bị nghẽn).
  * Tính chênh lệch encoder đã xử lý tràn bộ đếm, đổi sang quãng đường từng bánh,
  * rồi tích phân mô hình vi sai để cập nhật x, y và heading.
  * Vận tốc bánh được tính trung bình theo cửa sổ cấu hình riêng để giảm lượng tử
  * do encoder chỉ tạo số count nguyên.
  */
-HAL_StatusTypeDef Odometry_Update(void);
+HAL_StatusTypeDef Odometry_Update(uint16_t elapsed_ticks);
 /*
  * Sao chép trạng thái pose/vận tốc mới nhất ra state.
  * Trả HAL_ERROR nếu state là NULL hoặc odometry chưa được khởi tạo.

@@ -131,11 +131,20 @@ void I2cBus_SetYieldCallback(I2cBus_YieldFn_t fn) {
  * Chờ DMA hoàn tất trong vòng lặp bận, nhưng gọi yield callback mỗi lần lặp
  * để xử lý odometry/MPU6500 trong khi DMA tự động truyền dữ liệu trên bus.
  * CPU không bị giữ hoàn toàn: TIM3 ISR vẫn có thể đặt cờ và yield xử lý nó.
+ * [FIX 1.3] Thêm timeout 15ms để tránh treo CPU vĩnh viễn khi I2C bị kẹt.
  */
 static HAL_StatusTypeDef I2cBus_WaitForCompletion(void) {
+  uint32_t startTick = HAL_GetTick();
   while (transferStatus == HAL_BUSY) {
     if (yieldCallback != NULL) {
       yieldCallback();
+    }
+    /* Timeout bảo vệ: nếu DMA/I2C bị kẹt quá 15ms thì reset I2C và thoát */
+    if ((HAL_GetTick() - startTick) >= I2C_TIMEOUT_MS) {
+      HAL_I2C_DeInit(&hi2c1);
+      (void)Config_I2C1_Init();
+      transferStatus = HAL_TIMEOUT;
+      break;
     }
   }
   return transferStatus;
