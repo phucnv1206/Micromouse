@@ -105,6 +105,53 @@
 #define ODOMETRY_INITIAL_X_MM 300.0f
 #define ODOMETRY_INITIAL_Y_MM -45.0f
 
+/* ── PID VẬN TỐC BÁNH XE (WHEEL SPEED PID) ──────────────────────────────────
+ * Vòng lặp điều khiển kín độc lập cho từng bánh:
+ *   setpoint (mm/s) → PID → PWM [-100..+100]
+ * dt = ODOMETRY_SPEED_AVERAGE_WINDOW_MS / 1000.0 = 0.01 s (vận tốc cập nhật mỗi 10 ms).
+ * Anti-windup: tích phân I bị clamp ở ±WHEEL_PID_INTEGRAL_LIMIT.
+ * ──────────────────────────────────────────────────────────────────────────── */
+#define WHEEL_PID_KP                     0.30f   /* Hệ số P (tỉ lệ): tăng để phản hồi nhanh hơn */
+#define WHEEL_PID_KI                     0.60f   /* Hệ số I (tích phân): bù offset tĩnh ma sát */
+#define WHEEL_PID_KD                     0.005f  /* Hệ số D (vi phân): giảm dao động */
+#define WHEEL_PID_INTEGRAL_LIMIT         40.0f   /* Clamp tích phân I ±limit để chống windup */
+#define STRAIGHT_TARGET_SPEED_MM_S       300.0f  /* Vận tốc mục tiêu khi điều khiển thủ công W/S */
+#define NAV_CRUISE_SPEED_MM_S            300.0f  /* Vận tốc hành trình tới điểm đích (Nav) */
+#define NAV_MIN_SPEED_MM_S               35.0f   /* Vận tốc tối thiểu hãm tốc gần đích (thắng ma sát) */
+
+/* ── THAM SỐ PID XOAY GÓC (ROTATION PID) ───────────────────────────────────
+ * Vòng lặp PD đơn điều khiển góc xoay tại chỗ:
+ *   u = ROT_PID_KP * errorAngle - ROT_PID_KD * omega
+ * ──────────────────────────────────────────────────────────────────────────── */
+#define ROT_PID_KP                       0.5f    /* Hệ số tỉ lệ P sai số góc */
+#define ROT_PID_KD                       0.02f   /* Giảm chấn vi phân vận tốc góc (D trên Gyro) */
+#define ROT_PID_CRUISE_PWM               32.0f   /* Giới hạn tốc độ PWM hành trình khi quay */
+#define ROT_PID_MIN_PWM                  14.0f   /* Xung PWM tối thiểu bù deadzone ma sát tĩnh */
+#define ROT_PID_ANGLE_TOL_DEG            3.5f    /* Dung sai góc chấp nhận được (độ) */
+#define ROT_PID_TIMEOUT_MS               5000U   /* Thời gian tối đa bảo vệ cho một lệnh xoay góc (ms) */
+
+/* Tương thích macro cũ */
+#define KP_ROT_ANG                       ROT_PID_KP
+#define KD_ROT_ANG                       ROT_PID_KD
+#define CRUISE_PWM                       ROT_PID_CRUISE_PWM
+#define MIN_ANG_PWM                      ROT_PID_MIN_PWM
+#define ANGLE_TOL_DEG                    ROT_PID_ANGLE_TOL_DEG
+#define ANGLE_TIMEOUT                    ROT_PID_TIMEOUT_MS
+
+/* ── THAM SỐ DẪN ĐƯỜNG VÀ BÁM HƯỚNG KHI CHẠY THẲNG (NAV PURSUIT & HEADING) ─
+ * Khi xe quay tới góc ngắm điểm đích (dung sai 0.5 độ), xe lập tức chuyển
+ * sang chạy thẳng tới đích. Trong quá trình chạy, xe liên tục tính toán góc
+ * đường ngắm trực tiếp tới đích:
+ *   - Nếu góc lệch nằm trong dung sai 0.5 độ (NAV_HEADING_DEADBAND_DEG): xe chạy thẳng tắp.
+ *   - Nếu lệch > 0.5 độ: PID điều chỉnh tốc độ vi sai 2 bánh để uốn xe đúng hướng
+ *     ngay trong lúc xe ĐANG CHẠY THẲNG TIẾN TỚI (không dừng lại).
+ * ──────────────────────────────────────────────────────────────────────────── */
+#define NAV_TURN_TARGET_TOL_DEG          0.5f    /* Dung sai góc kết thúc xoay: vào vùng 0.5 độ là chạy thẳng ngay */
+#define NAV_HEADING_DEADBAND_DEG         0.5f    /* Vùng chết dung sai góc khi chạy thẳng (độ) */
+#define NAV_HEADING_KP                   8.0f    /* Hệ số P bám hướng (mm/s trên mỗi độ lệch) */
+#define NAV_HEADING_KD                   0.20f   /* Hệ số D giảm chấn tốc độ quay thân xe (mm/s trên mỗi dps) */
+#define MAX_STRAIGHT_CORRECTION_MM_S     120.0f  /* Giới hạn bù vi sai tốc độ tối đa giữa 2 bánh (mm/s) */
+
 /* ── CẤU HÌNH KẾT HỢP GYROZ VÀO ODOMETRY ─────────────────────────────────────
  * ODOMETRY_USE_GYRO_FUSION:
  *   1 = BẬT áp dụng GyroZ vào Odometry (kết hợp góc quay chuẩn xác)
