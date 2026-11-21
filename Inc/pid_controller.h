@@ -36,6 +36,9 @@ void Motion_Init(void);
 /* Xử lý nhận lệnh mới từ UART */
 void Motion_ProcessCommand(uint8_t cmd, int16_t data1, int16_t data2);
 
+/* Điều hướng tới tọa độ điểm đích (is_final_goal: true = điểm đích cuối cùng cần hãm tốc dừng xe; false = mốc trung gian ôm cua liên tục) */
+void Motion_NavToPoint(float target_x_mm, float target_y_mm, bool is_final_goal);
+
 /* Cập nhật vòng điều khiển PID (gọi định kỳ 100 Hz trong loop) */
 void Motion_Update(float dt_s);
 

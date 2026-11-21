@@ -23,4 +23,13 @@ HAL_StatusTypeDef MotorPwm_Set(MotorPwm_Channel motor, int16_t command);
 HAL_StatusTypeDef RunMotorRight(int16_t command);
 HAL_StatusTypeDef RunMotorLeft(int16_t command);
 
+/*
+ * Đặt độ rộng xung PWM trực tiếp theo micro giây (us) cho PID điều khiển tốc độ siêu mịn:
+ * Bánh phải nhận xung [MOTOR_PWM_PULSE_MIN_US .. MOTOR_PWM_PULSE_MAX_US].
+ * Bánh trái tự động bù chiều quay (MOTOR_LEFT_REVERSE_DIRECTION) quanh offset.
+ */
+HAL_StatusTypeDef MotorPwm_SetPulseUs(MotorPwm_Channel motor, uint16_t pulse_us);
+HAL_StatusTypeDef RunMotorRightPulseUs(uint16_t pulse_us);
+HAL_StatusTypeDef RunMotorLeftPulseUs(uint16_t pulse_us);
+
 #endif

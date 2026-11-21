@@ -12,6 +12,7 @@
 #include "i2c_bus.h"
 #include "navigation.h"
 #include "map_grid.h"
+#include "astar.h"
 
 /* Biến cờ chế độ quét và lưu bản đồ độc lập trên STM32 */
 static bool isMappingModeActive = false;
@@ -80,12 +81,7 @@ static void readUart(void){
   do {
     receiveStatus = UartProtocol_Receive(&rxFrame);
     if (receiveStatus == HAL_OK) {
-      if (rxFrame.command == CMD_DUMP_MAP) {
-        /* Trích xuất bản đồ: Chỉ thực hiện khi xe KHÔNG trong chế độ quét/lưu map */
-        if (!isMappingModeActive) {
-          Map_DumpToUart();
-        }
-      } else if (rxFrame.command == CMD_SET_OBSTACLES) {
+      if (rxFrame.command == CMD_SET_OBSTACLES) {
         /* Thông báo trước 2 vị trí vật cản ngẫu nhiên từ Web: slotTop (1 hoặc 2), slotBottom (3 hoặc 4) */
         uint8_t slotTop = (uint8_t)rxFrame.data1;
         uint8_t slotBottom = (uint8_t)rxFrame.data2;
@@ -109,6 +105,7 @@ static void loop(void) {
   /* Chu kỳ điều khiển vòng lặp chính 100 Hz (dt = 0.01 giây) */
   const float dt_s = 1.0f / (float)CONTROL_LOOP_FREQUENCY_HZ;
   Motion_Update(dt_s);
+  Auto_Update(dt_s);
 }
 
 
@@ -125,6 +122,11 @@ static void debug(void) {
                          x_mid, y_mid, MidValid,
                          x_right, y_right, RightValid);
   }
+
+  /* Cập nhật khoảng cách cảm biến cho bộ điều khiển tự động */
+  Auto_UpdateSensors((float)debugLeftDistanceMm, LeftValid,
+                     (float)debugMidDistanceMm, MidValid,
+                     (float)debugRightDistanceMm, RightValid);
 
   debugTelemetry.data1  = (int16_t)debugOdometryState.x_mm;
   debugTelemetry.data2  = (int16_t)debugOdometryState.y_mm;
@@ -215,6 +217,7 @@ int main(void) {
     Error_Handler();
   }
   Motion_Init();
+  Auto_Init();
   if (UartProtocol_Init() != HAL_OK) {
     Error_Handler();
   }
@@ -255,16 +258,17 @@ int main(void) {
     Led_Update();
     Button_Update();
 
-    /* Ấn giữ Nút 1 để bật / tắt chế độ quét lưu map (LED 2 sáng / tắt) */
-    if (b1.hold()) {
-      isMappingModeActive = !isMappingModeActive;
-      if (isMappingModeActive) {
-        /* Bật chế độ quét: Bật LED 2 sáng liên tục */
-        Led_SetPattern(2U, 1U, 1000U, 0U, 0U);
-      } else {
-        /* Tắt chế độ quét: Tắt LED 2 */
-        Led_SetPattern(2U, 0U, 0U, 0U, 0U);
-      }
+    /* Đồng bộ cờ quét map từ bộ điều khiển tự động */
+    isMappingModeActive = Auto_IsMappingActive();
+
+    /* Nút 1: Kích hoạt Vòng 1 (Quét map & Chạy A*) */
+    if (b1.click()) {
+      Auto_OnButton1();
+    }
+
+    /* Nút 2: Kích hoạt Vòng 2 (Reset Odometry & Chạy chính thức) */
+    if (b2.click()) {
+      Auto_OnButton2();
     }
 
     /* Kiểm tra cờ timer odometry */

@@ -107,3 +107,48 @@ HAL_StatusTypeDef RunMotorRight(int16_t command) {
 HAL_StatusTypeDef RunMotorLeft(int16_t command) {
   return MotorPwm_Set(MOTOR_PWM_LEFT, command);
 }
+
+/* Đặt trực tiếp độ rộng xung PWM (us) cho PID điều khiển tốc độ siêu mịn (độ phân giải 1 us) */
+HAL_StatusTypeDef MotorPwm_SetPulseUs(MotorPwm_Channel motor, uint16_t pulse_us) {
+  TIM_HandleTypeDef *timer;
+  uint32_t channel;
+  uint16_t pulse_width_us = pulse_us;
+
+  if (pulse_width_us < MOTOR_PWM_PULSE_MIN_US) {
+    pulse_width_us = MOTOR_PWM_PULSE_MIN_US;
+  } else if (pulse_width_us > MOTOR_PWM_PULSE_MAX_US) {
+    pulse_width_us = MOTOR_PWM_PULSE_MAX_US;
+  }
+
+  switch (motor) {
+    case MOTOR_PWM_RIGHT:
+      timer = &htim1;
+      channel = TIM_CHANNEL_1;
+      break;
+    case MOTOR_PWM_LEFT:
+      timer = &htim11;
+      channel = TIM_CHANNEL_1;
+#if MOTOR_LEFT_REVERSE_DIRECTION
+      pulse_width_us = (2U * MOTOR_LEFT_PWM_OFFSET_US) - pulse_width_us;
+#endif
+      break;
+    default:
+      return HAL_ERROR;
+  }
+
+  uint32_t pulse = ((uint32_t)pulse_width_us * MOTOR_PWM_COUNTER_HZ + 500000U) / 1000000U;
+  if (pulse > __HAL_TIM_GET_AUTORELOAD(timer) + 1U) {
+    return HAL_ERROR;
+  }
+  __HAL_TIM_SET_COMPARE(timer, channel, pulse);
+
+  return HAL_OK;
+}
+
+HAL_StatusTypeDef RunMotorRightPulseUs(uint16_t pulse_us) {
+  return MotorPwm_SetPulseUs(MOTOR_PWM_RIGHT, pulse_us);
+}
+
+HAL_StatusTypeDef RunMotorLeftPulseUs(uint16_t pulse_us) {
+  return MotorPwm_SetPulseUs(MOTOR_PWM_LEFT, pulse_us);
+}

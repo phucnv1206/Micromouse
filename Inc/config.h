@@ -105,12 +105,19 @@
 #define ODOMETRY_INITIAL_X_MM 300.0f
 #define ODOMETRY_INITIAL_Y_MM -45.0f
 
-/* ── PID VẬN TỐC BÁNH XE (WHEEL SPEED PID) ──────────────────────────────────
- * Vòng lặp điều khiển kín độc lập cho từng bánh:
- *   setpoint (mm/s) → PID → PWM [-100..+100]
+/* ── PID VẬN TỐC BÁNH XE (WHEEL SPEED PID) THEO ĐỘ RỘNG XUNG PWM (us) ─────────
+ * Vòng lặp điều khiển kín độc lập cho từng bánh xuất trực tiếp độ rộng xung PWM (us):
+ *   setpoint (mm/s) → PID → độ rộng xung PWM [offset ± deadzone ± delta_us]
  * dt = ODOMETRY_SPEED_AVERAGE_WINDOW_MS / 1000.0 = 0.01 s (vận tốc cập nhật mỗi 10 ms).
- * Anti-windup: tích phân I bị clamp ở ±WHEEL_PID_INTEGRAL_LIMIT.
+ * Độ phân giải đạt 1 us (thay vì dải -100..100 bị chia thô mỗi nấc 8 us), giúp xe chạy cực mịn.
+ * Anti-windup: tích phân I bị clamp ở ±WHEEL_PID_INTEGRAL_LIMIT_US.
  * ──────────────────────────────────────────────────────────────────────────── */
+#define WHEEL_PID_KP_US                  2.40f   /* Hệ số P: 2.40 us trên mỗi mm/s lỗi vận tốc */
+#define WHEEL_PID_KI_US                  4.80f   /* Hệ số I: 4.80 us/(mm/s * s) bù tĩnh ma sát */
+#define WHEEL_PID_KD_US                  0.040f  /* Hệ số D: 0.040 us/(mm/s^2) giảm chấn vi phân */
+#define WHEEL_PID_INTEGRAL_LIMIT_US      320.0f  /* Clamp tích phân I ±limit để chống windup (us) */
+
+/* Tương thích dải cũ -100..100 */
 #define WHEEL_PID_KP                     0.30f   /* Hệ số P (tỉ lệ): tăng để phản hồi nhanh hơn */
 #define WHEEL_PID_KI                     0.60f   /* Hệ số I (tích phân): bù offset tĩnh ma sát */
 #define WHEEL_PID_KD                     0.005f  /* Hệ số D (vi phân): giảm dao động */
@@ -150,7 +157,9 @@
 #define NAV_HEADING_DEADBAND_DEG         0.5f    /* Vùng chết dung sai góc khi chạy thẳng (độ) */
 #define NAV_HEADING_KP                   8.0f    /* Hệ số P bám hướng (mm/s trên mỗi độ lệch) */
 #define NAV_HEADING_KD                   0.20f   /* Hệ số D giảm chấn tốc độ quay thân xe (mm/s trên mỗi dps) */
-#define MAX_STRAIGHT_CORRECTION_MM_S     120.0f  /* Giới hạn bù vi sai tốc độ tối đa giữa 2 bánh (mm/s) */
+#define MAX_STRAIGHT_CORRECTION_MM_S     220.0f  /* Mức giảm tốc tối đa của bánh trong khi ôm cua (mm/s) */
+#define NAV_CORNER_BLEND_RADIUS_MM       120.0f  /* Bán kính chuyển mốc uốn cung tròn liên tục trước khi tới điểm (mm) */
+#define NAV_MAX_ARC_CORNER_ANGLE_DEG     115.0f  /* Góc lệch tối đa cho phép chuyển tiếp ôm cua động liên tục không dừng xe (độ) */
 
 /* ── CẤU HÌNH KẾT HỢP GYROZ VÀO ODOMETRY ─────────────────────────────────────
  * ODOMETRY_USE_GYRO_FUSION:

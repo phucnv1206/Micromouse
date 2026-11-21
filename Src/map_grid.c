@@ -3,9 +3,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
-#include <stdio.h>
-
-extern UART_HandleTypeDef huart2;
 
 /* Ma trận bản đồ 60 cột x 40 hàng (2400 bytes) */
 uint8_t g_map_grid[MAP_ROWS][MAP_COLS];
@@ -297,78 +294,4 @@ void Map_ConfirmObstacle(uint8_t col, uint8_t row) {
             g_map_grid[row][col] = MAP_VAL_OBSTACLE;
         }
     }
-}
-
-/* Trích xuất toàn bộ bản đồ 60x40 qua UART2 */
-void Map_DumpToUart(void) {
-    char buf[160];
-
-    /* Đợi DMA TX hoàn tất nếu có gói telemetry đang gửi dở (tối đa 20ms) */
-    uint32_t waitStart = HAL_GetTick();
-    while (huart2.gState != HAL_UART_STATE_READY && (HAL_GetTick() - waitStart < 20U)) {
-        __NOP();
-    }
-
-    /* 1. Đếm thống kê các ô */
-    uint16_t count_free = 0;
-    uint16_t count_unexplored = 0;
-    uint16_t count_new = 0;
-    uint16_t count_obstacle = 0;
-
-    for (uint8_t r = 0; r < MAP_ROWS; r++) {
-        for (uint8_t c = 0; c < MAP_COLS; c++) {
-            uint8_t v = g_map_grid[r][c];
-            if (v == MAP_VAL_FREE) count_free++;
-            else if (v == MAP_VAL_UNEXPLORED) count_unexplored++;
-            else if (v == MAP_VAL_NEW_OBSTACLE) count_new++;
-            else if (v == MAP_VAL_OBSTACLE) count_obstacle++;
-        }
-    }
-
-    /* 2. Header và thống kê */
-    snprintf(buf, sizeof(buf), "\r\n[MAP] === BẮT ĐẦU TRÍCH XUẤT MAP STM32 (60x40, 3cm/ô) ===\r\n");
-    HAL_UART_Transmit(&huart2, (uint8_t*)buf, strlen(buf), 100);
-
-    snprintf(buf, sizeof(buf), "[MAP] Thống kê: Trống(0)=%u | Chưa quét(1)=%u | Mới phát hiện(10)=%u | Vật cản(255)=%u\r\n",
-             count_free, count_unexplored, count_new, count_obstacle);
-    HAL_UART_Transmit(&huart2, (uint8_t*)buf, strlen(buf), 100);
-
-    /* 3. Liệt kê danh sách các ô mới phát hiện (10) */
-    if (count_new > 0) {
-        snprintf(buf, sizeof(buf), "[MAP] 📍 Danh sách %u ô cản mới phát hiện (10):\r\n", count_new);
-        HAL_UART_Transmit(&huart2, (uint8_t*)buf, strlen(buf), 100);
-
-        for (uint8_t r = 0; r < MAP_ROWS; r++) {
-            for (uint8_t c = 0; c < MAP_COLS; c++) {
-                if (g_map_grid[r][c] == MAP_VAL_NEW_OBSTACLE) {
-                    float x_mm, y_mm;
-                    Map_GridToMm(c, r, &x_mm, &y_mm);
-                    snprintf(buf, sizeof(buf), "[MAP-OBS] Cột %02u, Hàng %02u -> Tọa độ (%.0f, %.0f) mm\r\n",
-                             c, r, x_mm, y_mm);
-                    HAL_UART_Transmit(&huart2, (uint8_t*)buf, strlen(buf), 50);
-                }
-            }
-        }
-    }
-
-    /* 4. Truyền 40 dòng ma trận (mỗi dòng 60 ký tự) */
-    /* Dùng ký hiệu: . = Trống(0), ? = Chưa quét(1), ! = Mới phát hiện(10), # = Vật cản(255) */
-    for (int8_t r = (int8_t)(MAP_ROWS - 1); r >= 0; r--) {
-        char row_str[MAP_COLS + 1];
-        for (uint8_t c = 0; c < MAP_COLS; c++) {
-            uint8_t v = g_map_grid[r][c];
-            if (v == MAP_VAL_FREE) row_str[c] = '.';
-            else if (v == MAP_VAL_UNEXPLORED) row_str[c] = '?';
-            else if (v == MAP_VAL_NEW_OBSTACLE) row_str[c] = '!';
-            else row_str[c] = '#';
-        }
-        row_str[MAP_COLS] = '\0';
-
-        snprintf(buf, sizeof(buf), "[MAP-ROW] %02d: %s\r\n", r, row_str);
-        HAL_UART_Transmit(&huart2, (uint8_t*)buf, strlen(buf), 50);
-    }
-
-    /* 5. Footer */
-    snprintf(buf, sizeof(buf), "[MAP] === KẾT THÚC TRÍCH XUẤT MAP STM32 ===\r\n\r\n");
-    HAL_UART_Transmit(&huart2, (uint8_t*)buf, strlen(buf), 100);
 }

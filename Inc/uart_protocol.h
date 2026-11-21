@@ -15,7 +15,7 @@
 #define CMD_RESET_ODOM       0x04U
 #define CMD_EMERGENCY_STOP   0x05U
 #define CMD_NAV_TO_POINT     0x06U
-#define CMD_DUMP_MAP         0x07U  /* Trích xuất bản đồ 60x40 đã quét */
+#define CMD_DUMP_MAP         0x07U  /* Đã bỏ tính năng trích xuất bản đồ (Không dùng) */
 #define CMD_SET_OBSTACLES    0x08U  /* Thông báo 2 vị trí cản ngẫu nhiên (data1=slotTop, data2=slotBottom) */
 
 /*

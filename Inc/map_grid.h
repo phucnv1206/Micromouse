@@ -141,12 +141,6 @@ void Map_UpdateAllSensors(float robot_x_mm, float robot_y_mm, float robot_headin
  */
 void Map_ConfirmObstacle(uint8_t col, uint8_t row);
 
-/**
- * @brief Trích xuất toàn bộ dữ liệu bản đồ 60x40 dạng ASCII qua UART2 sang ESP32
- *        để debug trên Web Serial (thống kê số ô, tọa độ cản mới, lưới ma trận)
- */
-void Map_DumpToUart(void);
-
 #ifdef __cplusplus
 }
 #endif

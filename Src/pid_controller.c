@@ -25,7 +25,7 @@ static float NormalizeAngleDiff(float target_deg, float current_deg) {
 /* ================= PID VẬN TỐC BÁNH XE ================= */
 typedef struct {
   float integral;    /* Tích phân lỗi */
-  float prev_error;  /* Lỗi kỳ trước (cho vi phân) */
+  float prev_actual; /* Vận tốc thực tế kỳ trước (cho vi phân trên biến đo - Derivative on Measurement) */
 } WheelSpeedPID;
 
 static WheelSpeedPID s_pid_right;
@@ -33,38 +33,65 @@ static WheelSpeedPID s_pid_left;
 
 /* Reset trạng thái PID vận tốc */
 static void WheelSpeedPID_Reset(WheelSpeedPID *pid) {
-  pid->integral   = 0.0f;
-  pid->prev_error = 0.0f;
+  pid->integral    = 0.0f;
+  pid->prev_actual = 0.0f;
 }
 
 /*
- * Tính đầu ra PID vận tốc bánh (trả về PWM [-100..100]).
+ * Tính độ rộng xung PWM (us) trực tiếp từ PID vận tốc bánh xe.
  * setpoint_mm_s: vận tốc mục tiêu (mm/s, dương = tiến).
  * actual_mm_s  : vận tốc thực đo từ odometry (mm/s).
  * dt_s         : thời gian bước (s) = ODOMETRY_SPEED_AVERAGE_WINDOW_MS / 1000.
+ * offset_us, deadzone_us, maxzone_us: thông số PWM hiệu chuẩn riêng của từng bánh.
+ * Trả về: Độ rộng xung PWM thực tế (us) với độ phân giải siêu mịn 1 us.
  */
 static float WheelSpeedPID_Update(WheelSpeedPID *pid,
                                    float setpoint_mm_s,
                                    float actual_mm_s,
-                                   float dt_s) {
+                                   float dt_s,
+                                   uint16_t offset_us,
+                                   uint16_t deadzone_us,
+                                   uint16_t maxzone_us) {
+  /* Nếu setpoint = 0 và xe đã dừng: trả về offset xung trung tính */
+  if (setpoint_mm_s == 0.0f && fabsf(actual_mm_s) < 5.0f) {
+    pid->integral = 0.0f;
+    pid->prev_actual = actual_mm_s;
+    return (float)offset_us;
+  }
+
   float error = setpoint_mm_s - actual_mm_s;
 
-  /* Tích phân có anti-windup: clamp trước khi cộng */
+  /* Tích phân có anti-windup: clamp trước khi cộng (theo us) */
   pid->integral += error * dt_s;
-  if (pid->integral >  WHEEL_PID_INTEGRAL_LIMIT) pid->integral =  WHEEL_PID_INTEGRAL_LIMIT;
-  if (pid->integral < -WHEEL_PID_INTEGRAL_LIMIT) pid->integral = -WHEEL_PID_INTEGRAL_LIMIT;
+  if (pid->integral >  WHEEL_PID_INTEGRAL_LIMIT_US) pid->integral =  WHEEL_PID_INTEGRAL_LIMIT_US;
+  if (pid->integral < -WHEEL_PID_INTEGRAL_LIMIT_US) pid->integral = -WHEEL_PID_INTEGRAL_LIMIT_US;
 
-  float derivative = (error - pid->prev_error) / dt_s;
-  pid->prev_error  = error;
+  /* Vi phân trên biến đo (Derivative on Measurement) triệt tiêu hoàn toàn xung giật vi phân */
+  float derivative = -(actual_mm_s - pid->prev_actual) / dt_s;
+  pid->prev_actual = actual_mm_s;
 
-  float output = WHEEL_PID_KP * error
-               + WHEEL_PID_KI * pid->integral
-               + WHEEL_PID_KD * derivative;
+  float u_delta = WHEEL_PID_KP_US * error
+                + WHEEL_PID_KI_US * pid->integral
+                + WHEEL_PID_KD_US * derivative;
 
-  if (output >  100.0f) output =  100.0f;
-  if (output < -100.0f) output = -100.0f;
+  /* Bão hòa độ lệch xung trong giới hạn maxzone_us của động cơ */
+  if (u_delta >  (float)maxzone_us) u_delta =  (float)maxzone_us;
+  if (u_delta < -(float)maxzone_us) u_delta = -(float)maxzone_us;
 
-  return output;
+  /* Ánh xạ trực tiếp sang độ rộng xung PWM (us) có tính bù deadzone ma sát tĩnh */
+  float pulse_us;
+  if (u_delta > 0.0f) {
+    pulse_us = (float)offset_us + (float)deadzone_us + u_delta;
+  } else if (u_delta < 0.0f) {
+    pulse_us = (float)offset_us - (float)deadzone_us + u_delta;
+  } else {
+    pulse_us = (float)offset_us;
+  }
+
+  if (pulse_us > (float)MOTOR_PWM_PULSE_MAX_US) pulse_us = (float)MOTOR_PWM_PULSE_MAX_US;
+  if (pulse_us < (float)MOTOR_PWM_PULSE_MIN_US) pulse_us = (float)MOTOR_PWM_PULSE_MIN_US;
+
+  return pulse_us;
 }
 
 /* ================= ĐỊNH NGHĨA THAM SỐ ĐIỀU KHIỂN ĐIỂM (NAV TO POINT) ================= */
@@ -101,6 +128,8 @@ static float navTargetY = 0.0f;
 static float navTargetHeadingDeg = 0.0f;
 static uint32_t navStartTick = 0U;
 static float navPrevTurnError = 0.0f;
+static bool navIsFinalGoal = true;
+static float s_smoothCorrectionMmS = 0.0f;
 
 void Motion_Init(void) {
   currentMode = MOTION_MODE_STOP;
@@ -114,6 +143,8 @@ void Motion_Init(void) {
   WheelSpeedPID_Reset(&s_pid_left);
   navStage = NAV_STAGE_TURN;
   navPrevTurnError = 0.0f;
+  navIsFinalGoal = true;
+  s_smoothCorrectionMmS = 0.0f;
 
   RunMotorRight(0);
   RunMotorLeft(0);
@@ -129,6 +160,8 @@ void Motion_Stop(void) {
   WheelSpeedPID_Reset(&s_pid_right);
   WheelSpeedPID_Reset(&s_pid_left);
   navPrevTurnError = 0.0f;
+  navIsFinalGoal = true;
+  s_smoothCorrectionMmS = 0.0f;
 
   RunMotorRight(0);
   RunMotorLeft(0);
@@ -137,6 +170,83 @@ void Motion_Stop(void) {
 void Motion_SetCommandStatus(uint8_t cmd, uint8_t status) {
   activeCommand = cmd;
   commandStatus = status;
+  statusTimestamp = HAL_GetTick();
+}
+
+void Motion_NavToPoint(float targetX, float targetY, bool isFinalGoal) {
+  Odometry_State odom;
+  if (Odometry_GetState(&odom) != HAL_OK) {
+    odom.x_mm = 0.0f;
+    odom.y_mm = 0.0f;
+  }
+  float startX = odom.x_mm;
+  float startY = odom.y_mm;
+
+  float dx = targetX - startX;
+  float dy = targetY - startY;
+  float dist_mm = sqrtf(dx * dx + dy * dy);
+
+  if (isFinalGoal && dist_mm < NAV_ARRIVE_TOL_MM) {
+    RunMotorRight(0);
+    RunMotorLeft(0);
+    WheelSpeedPID_Reset(&s_pid_right);
+    WheelSpeedPID_Reset(&s_pid_left);
+    s_smoothCorrectionMmS = 0.0f;
+    currentMode = MOTION_MODE_STOP;
+    activeCommand = CMD_NAV_TO_POINT;
+    commandStatus = STATUS_COMPLETED;
+    statusTimestamp = HAL_GetTick();
+    return;
+  }
+
+  /* Nội suy góc đường đi từ vị trí hiện tại tới đích (đơn vị độ [0, 360)) */
+  float pathAngleRad = atan2f(dy, dx);
+  float pathAngleDeg = pathAngleRad * (180.0f / 3.141592653589793f);
+  while (pathAngleDeg >= 360.0f) pathAngleDeg -= 360.0f;
+  while (pathAngleDeg < 0.0f)   pathAngleDeg += 360.0f;
+
+  float currentHeading = KalmanOdometry_GetHeading();
+  float initialAngleErr = NormalizeAngleDiff(pathAngleDeg, currentHeading);
+
+  navTargetX = targetX;
+  navTargetY = targetY;
+  navStartX = startX;
+  navStartY = startY;
+  navTargetHeadingDeg = pathAngleDeg;
+  navStartTick = HAL_GetTick();
+  navIsFinalGoal = isFinalGoal;
+
+  /*
+   * ĐIỀU KIỆN CHUYỂN TIẾP CHẠY THẲNG LIÊN TỤC KHÔNG DỪNG XE:
+   * 1. Xe đang chạy tiến (currentMode == MOTION_MODE_NAV_TO_POINT && navStage == NAV_STAGE_DRIVE_STRAIGHT)
+   *    và góc lệch tới mốc tiếp theo <= NAV_MAX_ARC_CORNER_ANGLE_DEG (115 độ)
+   * 2. Hoặc xe mới xuất phát từ vạch xuất phát nhưng góc lệch ban đầu nhỏ (<= 35 độ)
+   * -> Cho xe chạy thẳng uốn cong động (DRIVE_STRAIGHT) luôn, KHÔNG xoay tại chỗ!
+   */
+  bool isMovingTransition = (currentMode == MOTION_MODE_NAV_TO_POINT) &&
+                            (navStage == NAV_STAGE_DRIVE_STRAIGHT) &&
+                            (fabsf(initialAngleErr) <= NAV_MAX_ARC_CORNER_ANGLE_DEG);
+
+  bool isGentleLaunch = (currentMode == MOTION_MODE_STOP) &&
+                        (fabsf(initialAngleErr) <= 35.0f);
+
+  if (isMovingTransition || isGentleLaunch) {
+    navStage = NAV_STAGE_DRIVE_STRAIGHT;
+  } else {
+    WheelSpeedPID_Reset(&s_pid_right);
+    WheelSpeedPID_Reset(&s_pid_left);
+    s_smoothCorrectionMmS = 0.0f;
+    if (fabsf(initialAngleErr) <= NAV_TURN_TARGET_TOL_DEG) {
+      navStage = NAV_STAGE_DRIVE_STRAIGHT;
+    } else {
+      navStage = NAV_STAGE_TURN; /* Giai đoạn 1: Quay đầu hướng về tọa độ đích */
+      navPrevTurnError = initialAngleErr;
+    }
+  }
+
+  currentMode = MOTION_MODE_NAV_TO_POINT;
+  activeCommand = CMD_NAV_TO_POINT;
+  commandStatus = STATUS_RUNNING;
   statusTimestamp = HAL_GetTick();
 }
 
@@ -264,67 +374,8 @@ void Motion_ProcessCommand(uint8_t cmd, int16_t data1, int16_t data2) {
     }
 
     case CMD_NAV_TO_POINT: {
-      /*
-       * Lệnh chạy tới điểm tọa độ mục tiêu (Go to Waypoint X, Y in mm):
-       * data1 = X_target (mm)
-       * data2 = Y_target (mm)
-       */
-      Odometry_State odom;
-      if (Odometry_GetState(&odom) != HAL_OK) {
-        odom.x_mm = 0.0f;
-        odom.y_mm = 0.0f;
-      }
-      float startX = odom.x_mm;
-      float startY = odom.y_mm;
-      float targetX = (float)data1;
-      float targetY = (float)data2;
-
-      float dx = targetX - startX;
-      float dy = targetY - startY;
-      float dist_mm = sqrtf(dx * dx + dy * dy);
-
-      if (dist_mm < NAV_ARRIVE_TOL_MM) {
-        RunMotorRight(0);
-        RunMotorLeft(0);
-        WheelSpeedPID_Reset(&s_pid_right);
-        WheelSpeedPID_Reset(&s_pid_left);
-        currentMode = MOTION_MODE_STOP;
-        activeCommand = CMD_NAV_TO_POINT;
-        commandStatus = STATUS_COMPLETED;
-        statusTimestamp = HAL_GetTick();
-        return;
-      }
-
-      /* Nội suy góc đường đi từ vị trí hiện tại tới đích (đơn vị độ [0, 360)) */
-      float pathAngleRad = atan2f(dy, dx);
-      float pathAngleDeg = pathAngleRad * (180.0f / 3.141592653589793f);
-      while (pathAngleDeg >= 360.0f) pathAngleDeg -= 360.0f;
-      while (pathAngleDeg < 0.0f)   pathAngleDeg += 360.0f;
-
-      float currentHeading = KalmanOdometry_GetHeading();
-      float initialAngleErr = NormalizeAngleDiff(pathAngleDeg, currentHeading);
-
-      navTargetX = targetX;
-      navTargetY = targetY;
-      navStartX = startX;
-      navStartY = startY;
-      navTargetHeadingDeg = pathAngleDeg;
-      WheelSpeedPID_Reset(&s_pid_right);
-      WheelSpeedPID_Reset(&s_pid_left);
-      navStartTick = HAL_GetTick();
-
-      /* Nếu xe đã quay đúng hướng tới đích (dung sai <= 0.5 độ), cho chạy thẳng luôn không cần xoay */
-      if (fabsf(initialAngleErr) <= NAV_TURN_TARGET_TOL_DEG) {
-        navStage = NAV_STAGE_DRIVE_STRAIGHT;
-      } else {
-        navStage = NAV_STAGE_TURN; /* Giai đoạn 1: Quay đầu hướng về tọa độ đích */
-        navPrevTurnError = initialAngleErr;
-      }
-
-      currentMode = MOTION_MODE_NAV_TO_POINT;
-      activeCommand = CMD_NAV_TO_POINT;
-      commandStatus = STATUS_RUNNING;
-      statusTimestamp = HAL_GetTick();
+      /* Gọi hàm điều hướng với is_final_goal = true (lệnh đơn lẻ từ UART dừng khi tới điểm) */
+      Motion_NavToPoint((float)data1, (float)data2, true);
       break;
     }
 
@@ -396,13 +447,15 @@ void Motion_Update(float dt_s) {
         actualL = odom.wheel_linear_mm_s[ENCODER_LEFT];
       }
 
-      /* Chạy PID từng bánh, dt = 10ms (cửa sổ trung bình vận tốc) */
+      /* Chạy PID từng bánh theo độ rộng xung PWM (us) siêu mịn */
       const float dt = (float)ODOMETRY_SPEED_AVERAGE_WINDOW_MS / 1000.0f;
-      float pwmR = WheelSpeedPID_Update(&s_pid_right, setR, actualR, dt);
-      float pwmL = WheelSpeedPID_Update(&s_pid_left,  setL, actualL, dt);
+      float pulseR = WheelSpeedPID_Update(&s_pid_right, setR, actualR, dt,
+                                          MOTOR_RIGHT_PWM_OFFSET_US, MOTOR_RIGHT_PWM_DEADZONE_US, MOTOR_RIGHT_PWM_MAXZONE_US);
+      float pulseL = WheelSpeedPID_Update(&s_pid_left,  setL, actualL, dt,
+                                          MOTOR_LEFT_PWM_OFFSET_US, MOTOR_LEFT_PWM_DEADZONE_US, MOTOR_LEFT_PWM_MAXZONE_US);
 
-      RunMotorRight((int16_t)roundf(pwmR));
-      RunMotorLeft((int16_t)roundf(pwmL));
+      RunMotorRightPulseUs((uint16_t)roundf(pulseR));
+      RunMotorLeftPulseUs((uint16_t)roundf(pulseL));
     }
     return;
   }
@@ -552,28 +605,24 @@ void Motion_Update(float dt_s) {
       float dy = navTargetY - odom.y_mm;
       float remainingDist = sqrtf(dx * dx + dy * dy);
 
-      /* Kiểm tra vector chiếu để phát hiện xe đã tới hoặc vượt qua đích */
-      float totalDx = navTargetX - navStartX;
-      float totalDy = navTargetY - navStartY;
-      float proj = totalDx * dx + totalDy * dy;
+      /* Kiểm tra dừng hoàn thành: CHỈ dừng lại khi đây là mốc đích cuối cùng (navIsFinalGoal == true) */
+      if (navIsFinalGoal) {
+        float totalDx = navTargetX - navStartX;
+        float totalDy = navTargetY - navStartY;
+        float proj = totalDx * dx + totalDy * dy;
 
-      if (remainingDist <= NAV_ARRIVE_TOL_MM || (remainingDist <= 60.0f && proj <= 0.0f)) {
-        RunMotorRight(0);
-        RunMotorLeft(0);
-        WheelSpeedPID_Reset(&s_pid_right);
-        WheelSpeedPID_Reset(&s_pid_left);
-        currentMode = MOTION_MODE_STOP;
-        activeCommand = CMD_NAV_TO_POINT;
-        commandStatus = STATUS_COMPLETED;
-        statusTimestamp = HAL_GetTick();
-        return;
-      }
-
-      /* Ham toc muot khi gan toi dich (khoang cach < 100mm) */
-      float targetSpeedMmS = NAV_CRUISE_SPEED_MM_S;
-      if (remainingDist < 100.0f) {
-        targetSpeedMmS = NAV_MIN_SPEED_MM_S + (NAV_CRUISE_SPEED_MM_S - NAV_MIN_SPEED_MM_S) * (remainingDist / 100.0f);
-        if (targetSpeedMmS < NAV_MIN_SPEED_MM_S) targetSpeedMmS = NAV_MIN_SPEED_MM_S;
+        if (remainingDist <= NAV_ARRIVE_TOL_MM || (remainingDist <= 60.0f && proj <= 0.0f)) {
+          RunMotorRight(0);
+          RunMotorLeft(0);
+          WheelSpeedPID_Reset(&s_pid_right);
+          WheelSpeedPID_Reset(&s_pid_left);
+          s_smoothCorrectionMmS = 0.0f;
+          currentMode = MOTION_MODE_STOP;
+          activeCommand = CMD_NAV_TO_POINT;
+          commandStatus = STATUS_COMPLETED;
+          statusTimestamp = HAL_GetTick();
+          return;
+        }
       }
 
       /* Dynamic target heading (Pursuit): luôn ngắm thẳng vào tọa độ đích thực tế;
@@ -595,43 +644,77 @@ void Motion_Update(float dt_s) {
       float errorHeading   = NormalizeAngleDiff(directAngleDeg, currentHeading);
       float absHeadingErr  = fabsf(errorHeading);
 
-      /* [THIẾT KẾ MỚI]: Bám hướng động khi đang chạy thẳng:
-       * - Dung sai 0.5 độ (NAV_HEADING_DEADBAND_DEG): trong phạm vi 0.5 độ xe chạy thẳng tắp (correction = 0).
-       * - Nếu sai lệch > 0.5 độ: PID góc xoay điều chỉnh vi sai tốc độ 2 bánh để uốn xe đúng hướng,
-       *   xe VẪN DUY TRÌ TIẾN THẲNG LIÊN TỤC, TUYỆT ĐỐI KHÔNG DỪNG LẠI. */
-      float correctionMmS = 0.0f;
+      /* Vận tốc hành trình:
+       * - Luôn duy trì vận tốc cao nhất NAV_CRUISE_SPEED_MM_S (300 mm/s) trong suốt quá trình chạy và ôm cua mốc trung gian.
+       * - Chỉ hãm tốc khi đang tới đích cuối cùng (navIsFinalGoal == true và remainingDist < 100mm). */
+      float targetSpeedMmS = NAV_CRUISE_SPEED_MM_S;
+      if (navIsFinalGoal && remainingDist < 100.0f) {
+        targetSpeedMmS = NAV_MIN_SPEED_MM_S + (NAV_CRUISE_SPEED_MM_S - NAV_MIN_SPEED_MM_S) * (remainingDist / 100.0f);
+        if (targetSpeedMmS < NAV_MIN_SPEED_MM_S) targetSpeedMmS = NAV_MIN_SPEED_MM_S;
+      }
+
+      /* Bám hướng động khi đang chạy thẳng / ôm cua: */
+      float targetCorrection = 0.0f;
       if (absHeadingErr > NAV_HEADING_DEADBAND_DEG) {
         float effectiveError = (errorHeading > 0.0f) ? (errorHeading - NAV_HEADING_DEADBAND_DEG)
                                                      : (errorHeading + NAV_HEADING_DEADBAND_DEG);
 
         float p_term = NAV_HEADING_KP * effectiveError;
         float d_term = NAV_HEADING_KD * currentOmega;
-        correctionMmS = p_term - d_term;
+        targetCorrection = p_term - d_term;
 
-        /* Giới hạn bù vi sai tối đa để không bao giờ làm bánh xe bị quay ngược chiều,
-         * xe luôn duy trì tiến thẳng về phía trước */
-        float maxCorr = targetSpeedMmS * 0.85f;
+        float maxCorr = targetSpeedMmS * 0.75f; /* Giữ bánh trong tối thiểu 25% tốc độ (>= 75 mm/s) */
         if (maxCorr > MAX_STRAIGHT_CORRECTION_MM_S) {
           maxCorr = MAX_STRAIGHT_CORRECTION_MM_S;
         }
-        if (correctionMmS >  maxCorr) correctionMmS =  maxCorr;
-        if (correctionMmS < -maxCorr) correctionMmS = -maxCorr;
+        if (targetCorrection >  maxCorr) targetCorrection =  maxCorr;
+        if (targetCorrection < -maxCorr) targetCorrection = -maxCorr;
       }
 
-      /* Setpoint từng bánh = tốc độ hành trình ± bù vi sai bám hướng */
-      float setR = targetSpeedMmS + correctionMmS;
-      float setL = targetSpeedMmS - correctionMmS;
+      /* [BỘ LỌC TỐC ĐỘ BIẾN THIÊN SLEW-RATE LIMITER]:
+       * Thay vì giật vi sai tốc độ tức thời gây khựng và giật xe,
+       * giới hạn mức tăng tối đa 14.0 mm/s mỗi chu kỳ 10ms (1400 mm/s^2).
+       * Bánh trong giảm tốc uyển chuyển, bảo toàn toàn bộ quán tính! */
+      const float maxDeltaCorrPerStep = 14.0f;
+      float deltaCorr = targetCorrection - s_smoothCorrectionMmS;
+      if (deltaCorr >  maxDeltaCorrPerStep) deltaCorr =  maxDeltaCorrPerStep;
+      if (deltaCorr < -maxDeltaCorrPerStep) deltaCorr = -maxDeltaCorrPerStep;
+      s_smoothCorrectionMmS += deltaCorr;
+
+      /* [CHIẾN THUẬT ÔM CUA BẢO TOÀN VẬN TỐC TỐI ĐA]:
+       * - Khi cua TRÁI (s_smoothCorrectionMmS > 0):
+       *     + Bánh phải (bánh ngoài) GIỮ NGUYÊN 100% TỐC ĐỘ (300 mm/s).
+       *     + Bánh trái (bánh trong) GIẢM TỐC độ để xe tự động uốn sang trái.
+       * - Khi cua PHẢI (s_smoothCorrectionMmS < 0):
+       *     + Bánh trái (bánh ngoài) GIỮ NGUYÊN 100% TỐC ĐỘ (300 mm/s).
+       *     + Bánh phải (bánh trong) GIẢM TỐC độ để xe tự động uốn sang phải.
+       * - Khi chạy thẳng (s_smoothCorrectionMmS == 0):
+       *     + Cả 2 bánh đều chạy đúng 300 mm/s. */
+      float setR = targetSpeedMmS;
+      float setL = targetSpeedMmS;
+
+      if (s_smoothCorrectionMmS > 0.0f) {
+        /* Cua trái: Bánh phải giữ nguyên 300 mm/s, Bánh trái giảm tốc */
+        setR = targetSpeedMmS;
+        setL = targetSpeedMmS - s_smoothCorrectionMmS;
+      } else if (s_smoothCorrectionMmS < 0.0f) {
+        /* Cua phải: Bánh trái giữ nguyên 300 mm/s, Bánh phải giảm tốc */
+        setR = targetSpeedMmS + s_smoothCorrectionMmS; /* s_smoothCorrectionMmS mang dấu âm */
+        setL = targetSpeedMmS;
+      }
 
       /* Doc van toc thuc tu Odometry */
       float actualR = odom.wheel_linear_mm_s[ENCODER_RIGHT];
       float actualL = odom.wheel_linear_mm_s[ENCODER_LEFT];
 
       const float dt = (float)ODOMETRY_SPEED_AVERAGE_WINDOW_MS / 1000.0f;
-      float pwmR = WheelSpeedPID_Update(&s_pid_right, setR, actualR, dt);
-      float pwmL = WheelSpeedPID_Update(&s_pid_left,  setL, actualL, dt);
+      float pulseR = WheelSpeedPID_Update(&s_pid_right, setR, actualR, dt,
+                                          MOTOR_RIGHT_PWM_OFFSET_US, MOTOR_RIGHT_PWM_DEADZONE_US, MOTOR_RIGHT_PWM_MAXZONE_US);
+      float pulseL = WheelSpeedPID_Update(&s_pid_left,  setL, actualL, dt,
+                                          MOTOR_LEFT_PWM_OFFSET_US, MOTOR_LEFT_PWM_DEADZONE_US, MOTOR_LEFT_PWM_MAXZONE_US);
 
-      RunMotorRight((int16_t)roundf(pwmR));
-      RunMotorLeft((int16_t)roundf(pwmL));
+      RunMotorRightPulseUs((uint16_t)roundf(pulseR));
+      RunMotorLeftPulseUs((uint16_t)roundf(pulseL));
       return;
     }
   }
