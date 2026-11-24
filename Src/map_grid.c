@@ -86,7 +86,9 @@ bool Map_IsBlocked(float x_mm, float y_mm) {
         return true; /* Ngoài biên map coi như cản */
     }
     uint8_t val = g_map_grid[r][c];
-    return (val == MAP_VAL_OBSTACLE || val == MAP_VAL_NEW_OBSTACLE);
+    /* [CHỈ LẤY ĐIỂM ĐỎ XÁC NHẬN]: Chỉ coi là vật cản khi là MAP_VAL_OBSTACLE (255 - điểm đỏ),
+     * bỏ qua hoàn toàn điểm vàng mới phát hiện (10 - MAP_VAL_NEW_OBSTACLE) để tránh nhận diện sai */
+    return (val == MAP_VAL_OBSTACLE);
 }
 
 /* Đánh dấu một vùng hình chữ nhật vào bản đồ */

@@ -132,8 +132,8 @@
  * ──────────────────────────────────────────────────────────────────────────── */
 #define ROT_PID_KP                       0.5f    /* Hệ số tỉ lệ P sai số góc */
 #define ROT_PID_KD                       0.02f   /* Giảm chấn vi phân vận tốc góc (D trên Gyro) */
-#define ROT_PID_CRUISE_PWM               32.0f   /* Giới hạn tốc độ PWM hành trình khi quay */
-#define ROT_PID_MIN_PWM                  14.0f   /* Xung PWM tối thiểu bù deadzone ma sát tĩnh */
+#define ROT_PID_CRUISE_PWM               38.0f   /* Giới hạn tốc độ PWM hành trình khi quay một bánh */
+#define ROT_PID_MIN_PWM                  18.0f   /* Xung PWM tối thiểu bù ma sát khi quay quanh một bánh dừng */
 #define ROT_PID_ANGLE_TOL_DEG            3.5f    /* Dung sai góc chấp nhận được (độ) */
 #define ROT_PID_TIMEOUT_MS               5000U   /* Thời gian tối đa bảo vệ cho một lệnh xoay góc (ms) */
 
@@ -157,9 +157,12 @@
 #define NAV_HEADING_DEADBAND_DEG         0.5f    /* Vùng chết dung sai góc khi chạy thẳng (độ) */
 #define NAV_HEADING_KP                   8.0f    /* Hệ số P bám hướng (mm/s trên mỗi độ lệch) */
 #define NAV_HEADING_KD                   0.20f   /* Hệ số D giảm chấn tốc độ quay thân xe (mm/s trên mỗi dps) */
-#define MAX_STRAIGHT_CORRECTION_MM_S     220.0f  /* Mức giảm tốc tối đa của bánh trong khi ôm cua (mm/s) */
-#define NAV_CORNER_BLEND_RADIUS_MM       120.0f  /* Bán kính chuyển mốc uốn cung tròn liên tục trước khi tới điểm (mm) */
-#define NAV_MAX_ARC_CORNER_ANGLE_DEG     115.0f  /* Góc lệch tối đa cho phép chuyển tiếp ôm cua động liên tục không dừng xe (độ) */
+#define MAX_STRAIGHT_CORRECTION_MM_S     220.0f  /* Mức bù vi sai tối đa khi chạy thẳng giữ hướng (mm/s) */
+#define MAX_CORNER_CORRECTION_MM_S       320.0f  /* Mức giảm tốc/vi sai tối đa của bánh trong khi ôm cua gắt (mm/s) */
+#define NAV_CORNER_BLEND_RADIUS_MM       28.0f   /* Bán kính uốn cua chuyển mốc (mm) */
+#define NAV_WAYPOINT_PASS_DIST_MM        4.0f    /* Khoảng cách xe tiến sát/vượt qua mốc trước khi rẽ fillet (mm) */
+#define NAV_PIVOT_OUTER_SPEED_MM_S       160.0f  /* Tốc độ bánh ngoài khi ôm cua gắt pivot quanh bánh trong dừng hẳn (mm/s) */
+#define NAV_MAX_ARC_CORNER_ANGLE_DEG     95.0f   /* Góc lệch tối đa cho phép ôm cua động liên tục không dừng xe (độ) */
 
 /* ── CẤU HÌNH KẾT HỢP GYROZ VÀO ODOMETRY ─────────────────────────────────────
  * ODOMETRY_USE_GYRO_FUSION:

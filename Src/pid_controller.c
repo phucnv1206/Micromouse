@@ -129,7 +129,42 @@ static float navTargetHeadingDeg = 0.0f;
 static uint32_t navStartTick = 0U;
 static float navPrevTurnError = 0.0f;
 static bool navIsFinalGoal = true;
-static float s_smoothCorrectionMmS = 0.0f;
+static float s_smoothSetL = 0.0f;
+static float s_smoothSetR = 0.0f;
+
+/* Biến theo dõi không gian hẹp / gặp vật cản gần (ép quay tại chỗ) */
+static bool s_isTightSpace = false;
+/* Cờ khóa cua gắt (Pivot Lock): Giữ bánh trong dừng hẳn cho đến khi đầu xe xoay gần thẳng hàng (<= 12 độ) */
+static bool s_isSharpPivotActive = false;
+
+void Motion_SetTightSpace(bool is_tight) {
+  s_isTightSpace = is_tight;
+}
+
+bool Motion_IsTightSpace(void) {
+  return s_isTightSpace;
+}
+
+void Motion_UpdateSensors(float left_mm, bool left_valid,
+                          float mid_mm,  bool mid_valid,
+                          float right_mm, bool right_valid) {
+  /*
+   * TÌNH HUỐNG 1: "GẶP VẬT CẢN MÀ KHÔNG GIAN CHO XE BÉ":
+   * - Cảm biến giữa (phía trước xe) phát hiện cản gần: <= 140 mm (14 cm)
+   * - Hoặc cảm biến 2 bên phát hiện tường / mép cản quá sát thành xe: <= 85 mm (8.5 cm)
+   */
+  bool tight = false;
+  if (mid_valid && mid_mm > 10.0f && mid_mm <= 140.0f) {
+    tight = true;
+  }
+  if (left_valid && left_mm > 10.0f && left_mm <= 85.0f) {
+    tight = true;
+  }
+  if (right_valid && right_mm > 10.0f && right_mm <= 85.0f) {
+    tight = true;
+  }
+  s_isTightSpace = tight;
+}
 
 void Motion_Init(void) {
   currentMode = MOTION_MODE_STOP;
@@ -144,7 +179,8 @@ void Motion_Init(void) {
   navStage = NAV_STAGE_TURN;
   navPrevTurnError = 0.0f;
   navIsFinalGoal = true;
-  s_smoothCorrectionMmS = 0.0f;
+  s_smoothSetL = 0.0f;
+  s_smoothSetR = 0.0f;
 
   RunMotorRight(0);
   RunMotorLeft(0);
@@ -161,7 +197,8 @@ void Motion_Stop(void) {
   WheelSpeedPID_Reset(&s_pid_left);
   navPrevTurnError = 0.0f;
   navIsFinalGoal = true;
-  s_smoothCorrectionMmS = 0.0f;
+  s_smoothSetL = 0.0f;
+  s_smoothSetR = 0.0f;
 
   RunMotorRight(0);
   RunMotorLeft(0);
@@ -191,7 +228,8 @@ void Motion_NavToPoint(float targetX, float targetY, bool isFinalGoal) {
     RunMotorLeft(0);
     WheelSpeedPID_Reset(&s_pid_right);
     WheelSpeedPID_Reset(&s_pid_left);
-    s_smoothCorrectionMmS = 0.0f;
+    s_smoothSetL = 0.0f;
+    s_smoothSetR = 0.0f;
     currentMode = MOTION_MODE_STOP;
     activeCommand = CMD_NAV_TO_POINT;
     commandStatus = STATUS_COMPLETED;
@@ -215,11 +253,12 @@ void Motion_NavToPoint(float targetX, float targetY, bool isFinalGoal) {
   navTargetHeadingDeg = pathAngleDeg;
   navStartTick = HAL_GetTick();
   navIsFinalGoal = isFinalGoal;
+  s_isSharpPivotActive = (fabsf(initialAngleErr) > 45.0f);
 
   /*
    * ĐIỀU KIỆN CHUYỂN TIẾP CHẠY THẲNG LIÊN TỤC KHÔNG DỪNG XE:
    * 1. Xe đang chạy tiến (currentMode == MOTION_MODE_NAV_TO_POINT && navStage == NAV_STAGE_DRIVE_STRAIGHT)
-   *    và góc lệch tới mốc tiếp theo <= NAV_MAX_ARC_CORNER_ANGLE_DEG (115 độ)
+   *    và góc lệch tới mốc tiếp theo <= NAV_MAX_ARC_CORNER_ANGLE_DEG (95 độ)
    * 2. Hoặc xe mới xuất phát từ vạch xuất phát nhưng góc lệch ban đầu nhỏ (<= 35 độ)
    * -> Cho xe chạy thẳng uốn cong động (DRIVE_STRAIGHT) luôn, KHÔNG xoay tại chỗ!
    */
@@ -235,7 +274,8 @@ void Motion_NavToPoint(float targetX, float targetY, bool isFinalGoal) {
   } else {
     WheelSpeedPID_Reset(&s_pid_right);
     WheelSpeedPID_Reset(&s_pid_left);
-    s_smoothCorrectionMmS = 0.0f;
+    s_smoothSetL = 0.0f;
+    s_smoothSetR = 0.0f;
     if (fabsf(initialAngleErr) <= NAV_TURN_TARGET_TOL_DEG) {
       navStage = NAV_STAGE_DRIVE_STRAIGHT;
     } else {
@@ -511,12 +551,39 @@ void Motion_Update(float dt_s) {
       if (u < 0.0f && u > -minPwm) u = -minPwm;
     }
 
-    /* u > 0 (xoay trái CCW): Bánh phải tiến, Bánh trái lùi */
-    int16_t rPwm = (int16_t)roundf(u);
-    int16_t lPwm = (int16_t)roundf(-u);
-
-    RunMotorRight(rPwm);
-    RunMotorLeft(lPwm);
+    /* [LỆNH XOAY GÓC TẠI CHỖ (CMD_ROTATE_ANGLE)]:
+     * - Nếu không gian hẹp (s_isTightSpace == true) hoặc khi lệnh yêu cầu xoay tại chỗ:
+     *   QUAY TẠI CHỖ (SPIN IN PLACE, R = 0): 2 bánh quay ngược chiều nhau quanh tâm trục bánh.
+     *   Bán kính quay = 0, mũi xe không bị văng ra xa, không va chạm với vật cản!
+     * - Nếu không gian thoáng (s_isTightSpace == false):
+     *   Cua gắt (Pivot turn quanh bánh bên cua dừng hẳn).
+     */
+    int16_t pwm = (int16_t)roundf(fabsf(u));
+    if (s_isTightSpace) {
+      /* Quay tại chỗ: Bánh trong lùi, bánh ngoài tiến */
+      if (errorAngle > 0.0f) {
+        RunMotorLeft(-pwm);
+        RunMotorRight(pwm);
+      } else if (errorAngle < 0.0f) {
+        RunMotorRight(-pwm);
+        RunMotorLeft(pwm);
+      } else {
+        RunMotorRight(0);
+        RunMotorLeft(0);
+      }
+    } else {
+      /* Cua gắt: Bánh bên cua dừng hẳn */
+      if (errorAngle > 0.0f) {
+        RunMotorLeft(0);
+        RunMotorRight(pwm);
+      } else if (errorAngle < 0.0f) {
+        RunMotorRight(0);
+        RunMotorLeft(pwm);
+      } else {
+        RunMotorRight(0);
+        RunMotorLeft(0);
+      }
+    }
     return;
   }
 
@@ -588,8 +655,62 @@ void Motion_Update(float dt_s) {
         if (u < 0.0f && u > -minPwm) u = -minPwm;
       }
 
-      RunMotorRight((int16_t)roundf(u));
-      RunMotorLeft((int16_t)roundf(-u));
+      /*
+       * [ĐIỀU HƯỚNG XOAY ĐẦU HƯỚNG VỀ MỐC ĐÍCH]:
+       * - Tình huống 1: Gặp vật cản mà không gian hẹp (s_isTightSpace == true):
+       *   -> QUAY TẠI CHỖ (SPIN IN PLACE, R = 0), không quay cung tròn, không pivot bánh dừng!
+       * - Tình huống 2: Góc cua lớn (> 45 độ ban đầu, s_isSharpPivotActive == true):
+       *   -> KHÓA CUA GẮT PIVOT TURN: Bánh bên trong DỪNG HẲN (0), bánh ngoài tiến (pwm)
+       *      DUY TRÌ XUYÊN SUỐT cho đến khi xe xoay gần thẳng hàng (absErr <= 12 độ),
+       *      tuyệt đối không nhả bánh trong ở 45 độ làm vọt lố cung tròn!
+       * - Tình huống 3: Góc nhẹ ngay từ đầu (|absErr| <= 45 độ, góc đỉnh > 135 độ):
+       *   -> CHẠY CUNG TRÒN: Bánh ngoài tiến pwm, bánh trong tiến nhẹ (pwm * 0.40f) giữ động năng.
+       */
+      int16_t pwm = (int16_t)roundf(fabsf(u));
+      if (absErr > 45.0f) {
+        s_isSharpPivotActive = true;
+      } else if (absErr <= 12.0f) {
+        s_isSharpPivotActive = false;
+      }
+
+      if (s_isTightSpace) {
+        /* QUAY TẠI CHỖ: 2 bánh ngược chiều */
+        if (errorAngle > 0.0f) {
+          RunMotorLeft(-pwm);
+          RunMotorRight(pwm);
+        } else if (errorAngle < 0.0f) {
+          RunMotorRight(-pwm);
+          RunMotorLeft(pwm);
+        } else {
+          RunMotorRight(0);
+          RunMotorLeft(0);
+        }
+      } else if (s_isSharpPivotActive) {
+        /* CUA GẮT BÁNH TRONG DỪNG HẲN (Khóa pivot cho đến khi hoàn thành góc) */
+        if (errorAngle > 0.0f) {
+          RunMotorLeft(0);
+          RunMotorRight(pwm);
+        } else if (errorAngle < 0.0f) {
+          RunMotorRight(0);
+          RunMotorLeft(pwm);
+        } else {
+          RunMotorRight(0);
+          RunMotorLeft(0);
+        }
+      } else {
+        /* GÓC NHẸ > 135 ĐỘ (|absErr| <= 45 độ ngay từ đầu): CHẠY CUNG TRÒN */
+        int16_t innerPwm = (int16_t)roundf(pwm * 0.40f);
+        if (errorAngle > 0.0f) {
+          RunMotorLeft(innerPwm);
+          RunMotorRight(pwm);
+        } else if (errorAngle < 0.0f) {
+          RunMotorRight(innerPwm);
+          RunMotorLeft(pwm);
+        } else {
+          RunMotorRight(0);
+          RunMotorLeft(0);
+        }
+      }
       return;
     }
 
@@ -616,7 +737,8 @@ void Motion_Update(float dt_s) {
           RunMotorLeft(0);
           WheelSpeedPID_Reset(&s_pid_right);
           WheelSpeedPID_Reset(&s_pid_left);
-          s_smoothCorrectionMmS = 0.0f;
+          s_smoothSetL = 0.0f;
+          s_smoothSetR = 0.0f;
           currentMode = MOTION_MODE_STOP;
           activeCommand = CMD_NAV_TO_POINT;
           commandStatus = STATUS_COMPLETED;
@@ -644,70 +766,151 @@ void Motion_Update(float dt_s) {
       float errorHeading   = NormalizeAngleDiff(directAngleDeg, currentHeading);
       float absHeadingErr  = fabsf(errorHeading);
 
-      /* Vận tốc hành trình:
-       * - Luôn duy trì vận tốc cao nhất NAV_CRUISE_SPEED_MM_S (300 mm/s) trong suốt quá trình chạy và ôm cua mốc trung gian.
-       * - Chỉ hãm tốc khi đang tới đích cuối cùng (navIsFinalGoal == true và remainingDist < 100mm). */
-      float targetSpeedMmS = NAV_CRUISE_SPEED_MM_S;
+      /* Vận tốc hành trình cơ sở tới đích: */
+      float cruiseSpeedMmS = NAV_CRUISE_SPEED_MM_S;
       if (navIsFinalGoal && remainingDist < 100.0f) {
-        targetSpeedMmS = NAV_MIN_SPEED_MM_S + (NAV_CRUISE_SPEED_MM_S - NAV_MIN_SPEED_MM_S) * (remainingDist / 100.0f);
-        if (targetSpeedMmS < NAV_MIN_SPEED_MM_S) targetSpeedMmS = NAV_MIN_SPEED_MM_S;
+        float speedToGoal = NAV_MIN_SPEED_MM_S + (NAV_CRUISE_SPEED_MM_S - NAV_MIN_SPEED_MM_S) * (remainingDist / 100.0f);
+        if (speedToGoal < cruiseSpeedMmS) cruiseSpeedMmS = speedToGoal;
+      }
+      if (cruiseSpeedMmS < NAV_MIN_SPEED_MM_S) cruiseSpeedMmS = NAV_MIN_SPEED_MM_S;
+
+      /*
+       * ====================================================================
+       * CHIẾN THUẬT ÔM CUA THÍCH ỨNG THEO TÌNH HÌNH THỰC TẾ:
+       * ====================================================================
+       * 1. GẶP VẬT CẢN MÀ KHÔNG GIAN HẸP (s_isTightSpace == true) VÀ LỆCH GÓC RÕ RỆT (absHeadingErr > 12 độ):
+       *    -> PHẢI QUAY TẠI CHỖ (SPIN IN PLACE, R = 0), KHÔNG QUAY CUNG TRÒN!
+       *    -> Bánh bên trong lùi (-pwm), bánh bên ngoài tiến (+pwm).
+       *    -> Tâm quay tại chính giữa xe, đầu xe không tịnh tiến văng vào vật cản!
+       *
+       * 2. GÓC CUA LỚN HƠN (absHeadingErr > 45 ĐỘ, GÓC ĐỈNH <= 135 ĐỘ NHƯ GÓC VUÔNG 90 ĐỘ):
+       *    -> CUA GẮT PIVOT TURN (BÁNH 1 BÊN DỪNG HẲN)!
+       *    -> Bánh bên cua dừng hẳn = 0 (RunMotorLeft(0) hoặc RunMotorRight(0)).
+       *    -> Bánh ngoài tiến với turnSpeed (NAV_PIVOT_OUTER_SPEED_MM_S = 160 mm/s).
+       *    -> Bo gắt góc cua fillet tại đúng đỉnh mốc.
+       *
+       * 3. NHỮNG GÓC NHẸ > |135 ĐỘ| (GÓC LỆCH HƯỚNG 12 ĐỘ < absHeadingErr <= 45 ĐỘ):
+       *    -> CHO CHẠY GÓC CUNG TRÒN (SMOOTH ARC TURN)!
+       *    -> Cả 2 bánh cùng quay TIẾN. Bánh ngoài chạy tốc độ hành trình, bánh trong giảm tốc
+       *       tỉ lệ với góc lệch nhưng luôn giữ vận tốc dương (tối thiểu 50 mm/s, không dừng).
+       *    -> Xe lướt mượt qua góc cua theo hình cung tròn tự nhiên, không bị giật hay khựng.
+       *
+       * 4. ĐI THẲNG / LỆCH GÓC NHỎ (absHeadingErr <= 12 ĐỘ):
+       *    -> Cả 2 bánh chạy tốc độ cao cruiseSpeedMmS, bám tuyến thẳng bằng vi sai PD nhỏ.
+       * ====================================================================
+       */
+      const float dt = (float)ODOMETRY_SPEED_AVERAGE_WINDOW_MS / 1000.0f;
+      float actualR = odom.wheel_linear_mm_s[ENCODER_RIGHT];
+      float actualL = odom.wheel_linear_mm_s[ENCODER_LEFT];
+
+      /* 1. Gặp vật cản mà không gian hẹp: QUAY TẠI CHỖ */
+      if (s_isTightSpace && absHeadingErr > 12.0f) {
+        float p_term = KP_ROT_ANG * errorHeading;
+        float d_term = KD_ROT_ANG * currentOmega;
+        float u = p_term - d_term;
+        if (u > CRUISE_PWM) u = CRUISE_PWM;
+        if (u < -CRUISE_PWM) u = -CRUISE_PWM;
+        if (absHeadingErr > 2.0f && fabsf(currentOmega) < 4.0f) {
+          float minPwm = (absHeadingErr < 8.0f) ? (MIN_ANG_PWM * (absHeadingErr / 8.0f)) : MIN_ANG_PWM;
+          if (u > 0.0f && u < minPwm) u = minPwm;
+          if (u < 0.0f && u > -minPwm) u = -minPwm;
+        }
+        int16_t pwm = (int16_t)roundf(fabsf(u));
+        if (errorHeading > 0.0f) {
+          RunMotorLeft(-pwm);
+          RunMotorRight(pwm);
+        } else {
+          RunMotorRight(-pwm);
+          RunMotorLeft(pwm);
+        }
+        WheelSpeedPID_Reset(&s_pid_left);
+        WheelSpeedPID_Reset(&s_pid_right);
+        s_smoothSetL = 0.0f;
+        s_smoothSetR = 0.0f;
+        return;
       }
 
-      /* Bám hướng động khi đang chạy thẳng / ôm cua: */
+      /* Cập nhật cờ khóa Cua Gắt (Pivot Lock): Khi góc bẻ lái lớn (> 45 độ ban đầu, ví dụ góc 70 độ tại góc vùng cấm),
+       * khóa bánh trong dừng hẳn = 0 XUYÊN SUỐT cho đến khi đầu xe xoay gần thẳng hàng (absHeadingErr <= 12 độ)!
+       * Tuyệt đối không nhả bánh trong ở 45 độ làm xe vừa chạy vừa cua tạo thành cung tròn phình to như overshoot PID! */
+      if (absHeadingErr > 45.0f) {
+        s_isSharpPivotActive = true;
+      } else if (absHeadingErr <= 12.0f) {
+        s_isSharpPivotActive = false;
+      }
+
+      /* 2. Góc cua lớn hơn (> 45 độ ban đầu, s_isSharpPivotActive == true): CUA GẮT (bánh 1 bên dừng hẳn) */
+      if (s_isSharpPivotActive) {
+        float turnSpeed = NAV_PIVOT_OUTER_SPEED_MM_S; /* 160.0 mm/s */
+
+        if (errorHeading > 0.0f) {
+          /* Cua TRÁI: Bánh trái DỪNG HẲN, bánh phải tiến */
+          RunMotorLeft(0);
+          WheelSpeedPID_Reset(&s_pid_left);
+          s_smoothSetL = 0.0f;
+
+          float pulseR = WheelSpeedPID_Update(&s_pid_right, turnSpeed, actualR, dt,
+                                              MOTOR_RIGHT_PWM_OFFSET_US, MOTOR_RIGHT_PWM_DEADZONE_US, MOTOR_RIGHT_PWM_MAXZONE_US);
+          RunMotorRightPulseUs((uint16_t)roundf(pulseR));
+        } else {
+          /* Cua PHẢI: Bánh phải DỪNG HẲN, bánh trái tiến */
+          RunMotorRight(0);
+          WheelSpeedPID_Reset(&s_pid_right);
+          s_smoothSetR = 0.0f;
+
+          float pulseL = WheelSpeedPID_Update(&s_pid_left, turnSpeed, actualL, dt,
+                                              MOTOR_LEFT_PWM_OFFSET_US, MOTOR_LEFT_PWM_DEADZONE_US, MOTOR_LEFT_PWM_MAXZONE_US);
+          RunMotorLeftPulseUs((uint16_t)roundf(pulseL));
+        }
+        return;
+      }
+
+      /* 3. Những góc nhẹ > |135 độ| (góc lệch 12 độ < absHeadingErr <= 45 độ ngay từ đầu): CHẠY GÓC CUNG TRÒN */
+      if (absHeadingErr > 12.0f) {
+        float outerSpeed = cruiseSpeedMmS;
+        if (outerSpeed > 240.0f) outerSpeed = 240.0f;
+
+        /* Giảm tốc bánh trong theo góc lệch (từ 85% xuống 35% tốc độ bánh ngoài) */
+        float ratio = (absHeadingErr - 12.0f) / (45.0f - 12.0f);
+        float innerSpeed = outerSpeed * (0.85f - ratio * 0.50f);
+        if (innerSpeed < 50.0f) innerSpeed = 50.0f; /* Tối thiểu 50 mm/s, không bao giờ dừng hẳn */
+
+        float setL, setR;
+        if (errorHeading > 0.0f) {
+          /* Cua TRÁI: Bánh trái chạy chậm hơn (inner), bánh phải chạy nhanh hơn (outer) */
+          setL = innerSpeed;
+          setR = outerSpeed;
+        } else {
+          /* Cua PHẢI: Bánh phải chạy chậm hơn (inner), bánh trái chạy nhanh hơn (outer) */
+          setR = innerSpeed;
+          setL = outerSpeed;
+        }
+
+        float pulseR = WheelSpeedPID_Update(&s_pid_right, setR, actualR, dt,
+                                            MOTOR_RIGHT_PWM_OFFSET_US, MOTOR_RIGHT_PWM_DEADZONE_US, MOTOR_RIGHT_PWM_MAXZONE_US);
+        float pulseL = WheelSpeedPID_Update(&s_pid_left,  setL, actualL, dt,
+                                            MOTOR_LEFT_PWM_OFFSET_US, MOTOR_LEFT_PWM_DEADZONE_US, MOTOR_LEFT_PWM_MAXZONE_US);
+
+        RunMotorRightPulseUs((uint16_t)roundf(pulseR));
+        RunMotorLeftPulseUs((uint16_t)roundf(pulseL));
+        return;
+      }
+
+      /* Chạy thẳng hoặc bám hướng tinh chỉnh: vi sai PD nhỏ quanh deadband */
       float targetCorrection = 0.0f;
       if (absHeadingErr > NAV_HEADING_DEADBAND_DEG) {
         float effectiveError = (errorHeading > 0.0f) ? (errorHeading - NAV_HEADING_DEADBAND_DEG)
                                                      : (errorHeading + NAV_HEADING_DEADBAND_DEG);
-
         float p_term = NAV_HEADING_KP * effectiveError;
         float d_term = NAV_HEADING_KD * currentOmega;
         targetCorrection = p_term - d_term;
-
-        float maxCorr = targetSpeedMmS * 0.75f; /* Giữ bánh trong tối thiểu 25% tốc độ (>= 75 mm/s) */
-        if (maxCorr > MAX_STRAIGHT_CORRECTION_MM_S) {
-          maxCorr = MAX_STRAIGHT_CORRECTION_MM_S;
-        }
-        if (targetCorrection >  maxCorr) targetCorrection =  maxCorr;
-        if (targetCorrection < -maxCorr) targetCorrection = -maxCorr;
+        if (targetCorrection >  MAX_STRAIGHT_CORRECTION_MM_S) targetCorrection =  MAX_STRAIGHT_CORRECTION_MM_S;
+        if (targetCorrection < -MAX_STRAIGHT_CORRECTION_MM_S) targetCorrection = -MAX_STRAIGHT_CORRECTION_MM_S;
       }
+      /* Cua trái (errorHeading > 0) -> targetCorrection > 0 -> setR tăng, setL giảm nhẹ */
+      float setR = cruiseSpeedMmS + targetCorrection * 0.5f;
+      float setL = cruiseSpeedMmS - targetCorrection * 0.5f;
 
-      /* [BỘ LỌC TỐC ĐỘ BIẾN THIÊN SLEW-RATE LIMITER]:
-       * Thay vì giật vi sai tốc độ tức thời gây khựng và giật xe,
-       * giới hạn mức tăng tối đa 14.0 mm/s mỗi chu kỳ 10ms (1400 mm/s^2).
-       * Bánh trong giảm tốc uyển chuyển, bảo toàn toàn bộ quán tính! */
-      const float maxDeltaCorrPerStep = 14.0f;
-      float deltaCorr = targetCorrection - s_smoothCorrectionMmS;
-      if (deltaCorr >  maxDeltaCorrPerStep) deltaCorr =  maxDeltaCorrPerStep;
-      if (deltaCorr < -maxDeltaCorrPerStep) deltaCorr = -maxDeltaCorrPerStep;
-      s_smoothCorrectionMmS += deltaCorr;
-
-      /* [CHIẾN THUẬT ÔM CUA BẢO TOÀN VẬN TỐC TỐI ĐA]:
-       * - Khi cua TRÁI (s_smoothCorrectionMmS > 0):
-       *     + Bánh phải (bánh ngoài) GIỮ NGUYÊN 100% TỐC ĐỘ (300 mm/s).
-       *     + Bánh trái (bánh trong) GIẢM TỐC độ để xe tự động uốn sang trái.
-       * - Khi cua PHẢI (s_smoothCorrectionMmS < 0):
-       *     + Bánh trái (bánh ngoài) GIỮ NGUYÊN 100% TỐC ĐỘ (300 mm/s).
-       *     + Bánh phải (bánh trong) GIẢM TỐC độ để xe tự động uốn sang phải.
-       * - Khi chạy thẳng (s_smoothCorrectionMmS == 0):
-       *     + Cả 2 bánh đều chạy đúng 300 mm/s. */
-      float setR = targetSpeedMmS;
-      float setL = targetSpeedMmS;
-
-      if (s_smoothCorrectionMmS > 0.0f) {
-        /* Cua trái: Bánh phải giữ nguyên 300 mm/s, Bánh trái giảm tốc */
-        setR = targetSpeedMmS;
-        setL = targetSpeedMmS - s_smoothCorrectionMmS;
-      } else if (s_smoothCorrectionMmS < 0.0f) {
-        /* Cua phải: Bánh trái giữ nguyên 300 mm/s, Bánh phải giảm tốc */
-        setR = targetSpeedMmS + s_smoothCorrectionMmS; /* s_smoothCorrectionMmS mang dấu âm */
-        setL = targetSpeedMmS;
-      }
-
-      /* Doc van toc thuc tu Odometry */
-      float actualR = odom.wheel_linear_mm_s[ENCODER_RIGHT];
-      float actualL = odom.wheel_linear_mm_s[ENCODER_LEFT];
-
-      const float dt = (float)ODOMETRY_SPEED_AVERAGE_WINDOW_MS / 1000.0f;
       float pulseR = WheelSpeedPID_Update(&s_pid_right, setR, actualR, dt,
                                           MOTOR_RIGHT_PWM_OFFSET_US, MOTOR_RIGHT_PWM_DEADZONE_US, MOTOR_RIGHT_PWM_MAXZONE_US);
       float pulseL = WheelSpeedPID_Update(&s_pid_left,  setL, actualL, dt,

@@ -16,17 +16,17 @@
 #define INFLATION_CELLS        1U      /* Nở cản 1 ô (30 mm) quanh vật cản */
 
 #define OBSTACLE_DETECT_MIN_MM 40.0f   /* Cự ly phát hiện cản tối thiểu (mm) */
-#define MID_LOOKAHEAD_MAX_MM   600.0f  /* Tầm nhìn xa ToF giữa quét dọc hành lang (mm) */
-#define SIDE_LOOKAHEAD_MAX_MM  350.0f  /* Tầm nhìn ToF 2 bên quét mép hành lang (mm) */
+#define MID_LOOKAHEAD_MAX_MM   400.0f  /* Tầm nhìn ToF giữa quét dọc hành lang (mm) - quét trước 40 cm để xe gom mẫu */
+#define SIDE_LOOKAHEAD_MAX_MM  250.0f  /* Tầm nhìn ToF 2 bên (mm) - tránh quét lệch vào tường sa bàn */
 #define FINISH_ZONE_SAFE_Y_MM  180.0f  /* Khi xe ở X >= 1200 và Y < 180 mm: Khóa ToF tránh bắt nhầm vạch đích */
 #define GOAL_FINISH_Y_MM       -100.0f /* Tọa độ Y đích đến hoàn thành (mm) */
 
 #define REPLAN_COOLDOWN_MS     1000U   /* Thời gian tối thiểu giữa 2 lần tính lại đường (ms) */
 #define START_COUNTDOWN_MS     1000U   /* Đếm ngược nhấp nháy đèn 1 giây trước khi chạy (ms) */
 
-/* Cột bắt đầu và kết thúc của vạch đích sa bàn (X: 1200 - 1800 mm) */
-#define FINISH_LINE_COL_MIN    40U     /* 40 * 30 mm = 1200 mm */
-#define FINISH_LINE_COL_MAX    59U     /* 59 * 30 mm = 1770 mm (đến 1800 mm) */
+/* Cột bắt đầu và kết thúc của vạch đích an toàn (cách xa vạch biên 1200 mm và tường ngoài 1800 mm) */
+#define FINISH_LINE_COL_MIN    42U     /* 42 * 30 mm = 1260 mm (Tâm ô 1275 mm, cách an toàn vạch biên vùng cấm 1200 mm) */
+#define FINISH_LINE_COL_MAX    57U     /* 57 * 30 mm = 1710 mm (cách an toàn tường sa bàn phải 1800 mm) */
 
 /* Thông số lọc cụm điểm (Spatial Clustering) và kiểm tra hành lang an toàn */
 #define CLUSTER_MAX_HITS        16U
@@ -35,6 +35,7 @@
 #define CLUSTER_MAX_AGE_MS      350U   /* Thời gian sống tối đa của mẫu điểm (ms) */
 #define OBSTACLE_DIAMETER_MM    100.0f /* Đường kính khoanh vùng cản 10 cm */
 #define CORRIDOR_BLOCK_DIST_MM  110.0f /* Bán kính dải an toàn hành lang (mm) */
+#define REPLAN_OBSTACLE_MAX_DIST_MM 100.0f /* Chỉ tìm đường mới khi cản bất ngờ cách xe dưới 10 cm (100 mm) */
 
 /* ==========================================================================
  * LỘ TRÌNH TỐI ƯU CỐ ĐỊNH BAN ĐẦU QUA 5 MỐC
@@ -43,8 +44,8 @@ static const AutoWaypoint s_universalWaypoints[] = {
     {  430.0f,  250.0f },  /* Mốc 0 (Điểm 2 trên sa bàn) */
     {  430.0f,  740.0f },  /* Mốc 1 (Điểm 3 trên sa bàn) */
     {  590.0f,  930.0f },  /* Mốc 2 (Điểm 4 trên sa bàn - Vòng qua đỉnh T9) */
-    { 1250.0f,  690.0f },  /* Mốc 3 (Điểm 5 trên sa bàn - Cửa vào khe 100mm) */
-    { 1250.0f, GOAL_FINISH_Y_MM } /* Mốc 4 (Điểm 6 trên sa bàn - Vượt hẳn qua vạch đích Y=-100) */
+    { 1250.0f,  675.0f },  /* Mốc 3 (Điểm 5 trên sa bàn - Đón góc cua gắt sát góc vùng cấm) */
+    { 1265.0f, GOAL_FINISH_Y_MM } /* Mốc 4 (Điểm 6 trên sa bàn - Chạy thẳng tắp tim hành lang X=1265 mm qua đích) */
 };
 #define NUM_UNIVERSAL_WAYPOINTS (sizeof(s_universalWaypoints) / sizeof(s_universalWaypoints[0]))
 
@@ -208,7 +209,9 @@ static void Auto_InflateMap(void) {
 
     for (uint8_t r = 0; r < MAP_ROWS; r++) {
         for (uint8_t c = 0; c < MAP_COLS; c++) {
-            if (g_map_grid[r][c] == MAP_VAL_OBSTACLE || g_map_grid[r][c] == MAP_VAL_NEW_OBSTACLE) {
+            /* [CHỈ LẤY ĐIỂM ĐỎ XÁC NHẬN]: Chỉ nở vật cản cho điểm đỏ (MAP_VAL_OBSTACLE = 255),
+             * không nở vật cản từ điểm vàng chưa xác nhận (MAP_VAL_NEW_OBSTACLE) để tránh nhận diện sai */
+            if (g_map_grid[r][c] == MAP_VAL_OBSTACLE) {
                 int r_min = (int)r - (int)INFLATION_CELLS;
                 int r_max = (int)r + (int)INFLATION_CELLS;
                 int c_min = (int)c - (int)INFLATION_CELLS;
@@ -299,7 +302,7 @@ static bool Auto_PlanAStar(float startX, float startY, float goalX, float goalY,
             int nr = (int)startRow + dr;
             int nc = (int)startCol + dc;
             if (nr >= 0 && nr < (int)MAP_ROWS && nc >= 0 && nc < (int)MAP_COLS) {
-                if (g_map_grid[nr][nc] != MAP_VAL_OBSTACLE && g_map_grid[nr][nc] != MAP_VAL_NEW_OBSTACLE) {
+                if (g_map_grid[nr][nc] != MAP_VAL_OBSTACLE) {
                     s_inflated[nr][nc] = MAP_VAL_FREE;
                 }
             }
@@ -309,7 +312,7 @@ static bool Auto_PlanAStar(float startX, float startY, float goalX, float goalY,
     /* Mở đích đến: nếu là toàn bộ dải vạch đích (X: 1200-1800, Y=0), mở toàn bộ dải row 0 */
     if (isGoalFinishLine) {
         for (uint8_t c = FINISH_LINE_COL_MIN; c <= FINISH_LINE_COL_MAX; c++) {
-            if (g_map_grid[0][c] != MAP_VAL_OBSTACLE && g_map_grid[0][c] != MAP_VAL_NEW_OBSTACLE) {
+            if (g_map_grid[0][c] != MAP_VAL_OBSTACLE) {
                 s_inflated[0][c] = MAP_VAL_FREE;
             }
         }
@@ -566,13 +569,15 @@ static float Auto_PointToSegmentDist(float px, float py, float x0, float y0, flo
 
 /* Thực thi tìm đường né toàn cục khi phát hiện hành lang bị cản */
 static bool Auto_ExecuteReroute(float obsX, float obsY, const Odometry_State *pOdom) {
-    /* 1. Dừng xe lập tức */
+    /* 1. Dừng xe lập tức và kích hoạt chế độ không gian hẹp (quay tại chỗ để thoát cản) */
     Motion_Stop();
+    Motion_SetTightSpace(true);
     s_autoState = AUTO_STATE_AVOIDING;
 
-    /* 2. Khoanh vùng cản đường kính 10 cm (bán kính 50 mm) vào bản đồ số */
+    /* 2. Khoanh vùng cản đường kính 10 cm (bán kính 50 mm) vào bản đồ số:
+     * [CHỈ LẤY ĐIỂM ĐỎ XÁC NHẬN]: Đánh dấu MAP_VAL_OBSTACLE (255 - điểm đỏ đã xác nhận cụm ToF) */
     float halfDim = OBSTACLE_DIAMETER_MM * 0.5f;
-    Map_MarkBox(obsX - halfDim, obsX + halfDim, obsY - halfDim, obsY + halfDim, MAP_VAL_NEW_OBSTACLE);
+    Map_MarkBox(obsX - halfDim, obsX + halfDim, obsY - halfDim, obsY + halfDim, MAP_VAL_OBSTACLE);
 
     /* 3. Lựa chọn mục tiêu A* thông minh */
     bool isGoalFinish = false;
@@ -589,7 +594,7 @@ static bool Auto_ExecuteReroute(float obsX, float obsY, const Odometry_State *pO
     if ((pOdom->x_mm >= 500.0f && pOdom->y_mm >= 700.0f) ||
         (s_activeWaypointIdx >= (s_numActiveWaypoints > 2U ? (s_numActiveWaypoints - 2U) : 0U))) {
         isGoalFinish = true;
-        detourFound = Auto_PlanAStar(pOdom->x_mm, pOdom->y_mm, 1250.0f, GOAL_FINISH_Y_MM, true, detourWp, &detourCount, 16U);
+        detourFound = Auto_PlanAStar(pOdom->x_mm, pOdom->y_mm, 1265.0f, GOAL_FINISH_Y_MM, true, detourWp, &detourCount, 16U);
         targetIdx = s_numActiveWaypoints;
     } else {
         /*
@@ -613,7 +618,7 @@ static bool Auto_ExecuteReroute(float obsX, float obsY, const Odometry_State *pO
 
         if (!detourFound) {
             isGoalFinish = true;
-            detourFound = Auto_PlanAStar(pOdom->x_mm, pOdom->y_mm, 1250.0f, GOAL_FINISH_Y_MM, true, detourWp, &detourCount, 16U);
+            detourFound = Auto_PlanAStar(pOdom->x_mm, pOdom->y_mm, 1265.0f, GOAL_FINISH_Y_MM, true, detourWp, &detourCount, 16U);
             targetIdx = s_numActiveWaypoints;
         }
     }
@@ -843,6 +848,14 @@ void Auto_Update(float dt_s) {
                 s_lastDetectedObsX = confirmedObsX;
                 s_lastDetectedObsY = confirmedObsY;
 
+                /* Tính khoảng cách từ xe tới vật cản đã xác nhận */
+                float dxObs = confirmedObsX - odom.x_mm;
+                float dyObs = confirmedObsY - odom.y_mm;
+                float distCarToObs = sqrtf(dxObs * dxObs + dyObs * dyObs);
+                float distFrontToObs = distCarToObs - 34.0f; /* Khoảng cách từ đầu xe / ToF sensor */
+                if (distFrontToObs < 0.0f) distFrontToObs = 0.0f;
+                float fwdDist = dxObs * cosHeading + dyObs * sinHeading;
+
                 /* Kiểm tra xem cản này có nằm trong hành lang di chuyển hay không */
                 bool corridorBlocked = false;
 
@@ -872,8 +885,17 @@ void Auto_Update(float dt_s) {
                     }
                 }
 
-                /* Nếu hành lang bị phong tỏa và đã hết cooldown -> Né ngay lập tức! */
-                if (corridorBlocked && (now - s_lastReplanTick) >= REPLAN_COOLDOWN_MS) {
+                /*
+                 * [YÊU CẦU: VẬT CẢN BẤT NGỜ CÁCH XE DƯỚI 10 CM (100 MM) THÌ MỚI TÌM ĐƯỜNG MỚI]:
+                 * - Loại bỏ hoàn toàn nhiễu từ xa (phản xạ xa, mép trụ tĩnh, tia quét lệch).
+                 * - Tăng thời gian để xe tiến tới gần và quét liên tục chùm tia ToF chính xác.
+                 * - Chỉ khi khoảng cách từ đầu xe tới vật cản <= 100 mm (< 10 cm) VÀ vật cản nằm phía trước:
+                 *   mới dừng xe và gọi Auto_ExecuteReroute để tìm đường mới!
+                 */
+                bool isUnder10cm = (distFrontToObs <= REPLAN_OBSTACLE_MAX_DIST_MM) && (fwdDist > 0.0f);
+
+                /* Nếu hành lang bị phong tỏa VÀ cản cách xe dưới 10cm VÀ đã hết cooldown -> Né ngay! */
+                if (corridorBlocked && isUnder10cm && (now - s_lastReplanTick) >= REPLAN_COOLDOWN_MS) {
                     s_lastReplanTick = now;
                     Auto_ExecuteReroute(confirmedObsX, confirmedObsY, &odom);
                     return;
@@ -889,11 +911,11 @@ void Auto_Update(float dt_s) {
      * NGUYÊN LÝ HOẠT ĐỘNG:
      * - Đối với các mốc trung gian (trước mốc vạch đích cuối cùng):
      *   Xe KHÔNG BAO GIỜ dừng lại ở mốc để xoay tại chỗ!
-     * - Khi xe tiến vào bán kính chuyển tiếp (blendRadius <= 120 mm)
+     * - Khi xe tiến vào bán kính chuyển tiếp fillet (blendRadius <= 45 mm)
      *   hoặc đã chạy cắt qua mặt phẳng mốc (approachProj <= 0):
      *   -> Lập tức chuyển sang mốc tiếp theo và gửi lệnh CMD_NAV_TO_POINT ngay khi xe đang chạy!
-     * - pid_controller sẽ duy trì vận tốc cao và điều khiển vi sai 2 bánh để xe vẽ một cung tròn
-     *   ôm cua mượt mà, lướt thẳng sang hành lang tiếp theo với tốc độ tối đa!
+     * - pid_controller sẽ chủ động giảm tốc và phanh bánh trong để bo góc fillet gắt và gọn gàng,
+     *   không bị văng rộng tạo thành hình vòng cung quá đà!
      */
     if (s_activeWaypointIdx < (s_numActiveWaypoints > 1U ? (s_numActiveWaypoints - 1U) : 0U)) {
         float curWpX = s_activeWaypoints[s_activeWaypointIdx].x_mm;
@@ -909,18 +931,30 @@ void Auto_Update(float dt_s) {
         float segDy = curWpY - prevWpY;
         float segLen = sqrtf(segDx * segDx + segDy * segDy);
 
-        /* Bán kính uốn góc thích ứng: mặc định NAV_CORNER_BLEND_RADIUS_MM (120 mm),
-         * nếu đoạn đường ngắn thì không quá 45% chiều dài đoạn đường */
-        float blendRadius = NAV_CORNER_BLEND_RADIUS_MM;
-        if (segLen > 10.0f && (segLen * 0.45f) < blendRadius) {
-            blendRadius = segLen * 0.45f;
+        /*
+         * [CHUYỂN TIẾP MỐC CUA GẮT FILLET - XE ĐI QUA MỐC MỘT TÝ]:
+         * - Không rẽ non / cắt góc sớm trước điểm (loại bỏ blendRadius lớn làm góc cua phình rộng thành vòng cung).
+         * - Xe chạy thẳng tiến sâu tới mốc và vượt qua mốc một khoảng ngắn (pastDistMm >= NAV_WAYPOINT_PASS_DIST_MM)
+         *   rồi mới chuyển mốc để vào cua fillet gắt tại đúng vị trí đỉnh góc cua!
+         */
+        float approachProj = segDx * dx + segDy * dy;
+        float pastDistMm = (segLen > 1.0f) ? (-approachProj / segLen) : 0.0f;
+
+        bool shouldSwitch = false;
+        if (segLen > 10.0f) {
+            /* Chuyển mốc khi xe đã tới sát mốc (<= 28mm) hoặc đã đi qua mặt phẳng mốc (pastDistMm >= 0) */
+            if (pastDistMm >= NAV_WAYPOINT_PASS_DIST_MM ||
+                (distToCurWp <= NAV_CORNER_BLEND_RADIUS_MM && pastDistMm >= -5.0f) ||
+                (distToCurWp <= 18.0f)) {
+                shouldSwitch = true;
+            }
+        } else {
+            if (distToCurWp <= NAV_CORNER_BLEND_RADIUS_MM) {
+                shouldSwitch = true;
+            }
         }
 
-        /* Hình chiếu tiến độ dọc theo đoạn tiếp cận (approachProj <= 0: đã ngang qua hoặc vượt qua mốc) */
-        float approachProj = segDx * dx + segDy * dy;
-        bool shouldBlend = (distToCurWp <= blendRadius) || (segLen > 10.0f && approachProj <= 0.0f);
-
-        if (shouldBlend) {
+        if (shouldSwitch) {
             s_activeWaypointIdx++;
 
             /* KIỂM TRA AN TOÀN HÀNH LANG KẾ TIẾP TRƯỚC KHI VÀO */
@@ -931,7 +965,13 @@ void Auto_Update(float dt_s) {
                                                   s_activeWaypoints[s_activeWaypointIdx].x_mm,
                                                   s_activeWaypoints[s_activeWaypointIdx].y_mm);
                 if (d <= CORRIDOR_BLOCK_DIST_MM) {
-                    nextSegmentBlocked = true;
+                    float dxObs = s_lastDetectedObsX - odom.x_mm;
+                    float dyObs = s_lastDetectedObsY - odom.y_mm;
+                    float dToCar = sqrtf(dxObs * dxObs + dyObs * dyObs) - 34.0f;
+                    if (dToCar < 0.0f) dToCar = 0.0f;
+                    if (dToCar <= REPLAN_OBSTACLE_MAX_DIST_MM) {
+                        nextSegmentBlocked = true;
+                    }
                 }
             }
 
@@ -973,7 +1013,13 @@ void Auto_Update(float dt_s) {
                                                   s_activeWaypoints[s_activeWaypointIdx].x_mm,
                                                   s_activeWaypoints[s_activeWaypointIdx].y_mm);
                 if (d <= CORRIDOR_BLOCK_DIST_MM) {
-                    nextSegmentBlocked = true;
+                    float dxObs = s_lastDetectedObsX - odom.x_mm;
+                    float dyObs = s_lastDetectedObsY - odom.y_mm;
+                    float dToCar = sqrtf(dxObs * dxObs + dyObs * dyObs) - 34.0f;
+                    if (dToCar < 0.0f) dToCar = 0.0f;
+                    if (dToCar <= REPLAN_OBSTACLE_MAX_DIST_MM) {
+                        nextSegmentBlocked = true;
+                    }
                 }
             }
 

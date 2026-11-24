@@ -123,10 +123,13 @@ static void debug(void) {
                          x_right, y_right, RightValid);
   }
 
-  /* Cập nhật khoảng cách cảm biến cho bộ điều khiển tự động */
+  /* Cập nhật khoảng cách cảm biến cho bộ điều khiển tự động và bộ điều hướng chuyển động */
   Auto_UpdateSensors((float)debugLeftDistanceMm, LeftValid,
                      (float)debugMidDistanceMm, MidValid,
                      (float)debugRightDistanceMm, RightValid);
+  Motion_UpdateSensors((float)debugLeftDistanceMm, LeftValid,
+                       (float)debugMidDistanceMm, MidValid,
+                       (float)debugRightDistanceMm, RightValid);
 
   debugTelemetry.data1  = (int16_t)debugOdometryState.x_mm;
   debugTelemetry.data2  = (int16_t)debugOdometryState.y_mm;

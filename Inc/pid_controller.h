@@ -51,6 +51,17 @@ int16_t Motion_GetFeedbackStatusWord(void);
 /* Báo trạng thái cho lệnh */
 void Motion_SetCommandStatus(uint8_t cmd, uint8_t status);
 
+/* Cập nhật khoảng cách cảm biến ToF để phát hiện tình huống gặp cản gần / không gian hẹp */
+void Motion_UpdateSensors(float left_mm, bool left_valid,
+                          float mid_mm,  bool mid_valid,
+                          float right_mm, bool right_valid);
+
+/* Bật/tắt chế độ ép quay tại chỗ trong không gian hẹp */
+void Motion_SetTightSpace(bool is_tight);
+
+/* Kiểm tra xem xe có đang trong không gian hẹp hay không */
+bool Motion_IsTightSpace(void);
+
 #ifdef __cplusplus
 }
 #endif
