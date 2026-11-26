@@ -78,7 +78,7 @@ Chi tiết kết nối chân vi điều khiển và sơ đồ nguyên lý phần
 | `2` | `uint8_t` | Command | Mã lệnh (`0x00`: Manual, `0x03`: Rotate, `0x04`: Reset Odom, `0x06`: NavToPoint, `0x08`: SetObs) |
 | `3..4` | `int16_t` (Big-Endian) | Data 1 | Tham số 1 (Tốc độ bánh phải / Góc xoay / Tọa độ X / Slot Top) |
 | `5..6` | `int16_t` (Big-Endian) | Data 2 | Tham số 2 (Tốc độ bánh trái / Tọa độ Y / Slot Bottom) |
-| `7` | `uint8_t` | Data 3 | Dữ liệu phụ / Cờ chế độ |
+| `7` | `uint8_t` | `checksum` | Checksum cộng dồn 8-bit modulo 256 tính trên `Byte 0..6`: `(Byte[0] + ... + Byte[6]) & 0xFF` |
 
 ### 5.2. Khung Telemetry Từ STM32 Lên ESP32 / Web (32 Byte, Tần số 40 Hz)
 | Byte Offset | Kiểu Dữ Liệu | Trường Dữ Liệu | Ý Nghĩa & Đơn Vị |

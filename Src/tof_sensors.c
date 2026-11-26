@@ -199,6 +199,21 @@ static HAL_StatusTypeDef TofSensors_ConfigureMidDevice(TofSensors_Device *device
   if (lastL1Error != 0) {
     return HAL_ERROR;
   }
+  /* Thu hẹp ROI tâm 8x8 SPAD (~15 độ FoV đối xứng) chống phản xạ mặt sàn và rìa trụ T14 */
+  lastInitStage = TOF_INIT_STAGE_L1_ROI;
+  lastL1Error = VL53L1X_SetROI(currentAddress, 8U, 8U);
+  if (lastL1Error != 0) {
+    return HAL_ERROR;
+  }
+  uint16_t roiX = 0U;
+  uint16_t roiY = 0U;
+  lastL1Error = VL53L1X_GetROI_XY(currentAddress, &roiX, &roiY);
+  if (lastL1Error != 0 || roiX != 8U || roiY != 8U) {
+    if (lastL1Error == 0) {
+      lastL1Error = 1;
+    }
+    return HAL_ERROR;
+  }
   lastInitStage = TOF_INIT_STAGE_L1_TIMING_BUDGET;
   lastL1Error = VL53L1X_SetTimingBudgetInMs(currentAddress, TOF_MID_TIMING_BUDGET_MS);
   if (lastL1Error != 0) {

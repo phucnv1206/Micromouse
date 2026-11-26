@@ -44,22 +44,22 @@ typedef struct {
 /* Ma trận lưu trữ bản đồ điểm (2400 bytes) */
 extern uint8_t g_map_grid[MAP_ROWS][MAP_COLS];
 
+/* Danh sách 17 vật cản tĩnh cố định T1 -> T17 */
+extern const Map_ObstacleDef g_static_obstacles[STATIC_OBSTACLE_COUNT];
+
 /* ==========================================================================
  * CÁC HÀM XỬ LÝ BẢN ĐỒ
  * ========================================================================== */
 
 /**
- * @brief Khởi tạo bản đồ:
+ * @brief Khởi tạo bản đồ tĩnh:
  *        - Đặt toàn bộ map về giá trị 1 (Chưa quét)
  *        - Đánh dấu vùng cấm chữ U (X: 60-120cm, Y: 0-60cm) thành 255
  *        - Đánh dấu 17 trụ cản tĩnh T1 -> T17 thành 255
- *        - Kích hoạt 2 vị trí cản ngẫu nhiên được báo trước thành 255
  *        - Đặt vị trí xuất phát của xe (quanh X=30cm, Y=0cm) thành 0 (Không cản)
- *
- * @param slot_top Chọn vị trí cản nhóm trên: 1 hoặc 2 (hoặc 0 nếu chưa biết)
- * @param slot_bottom Chọn vị trí cản nhóm dưới: 3 hoặc 4 (hoặc 0 nếu chưa biết)
+ *        (Không biết trước bất kỳ vật cản ngẫu nhiên nào; mọi cản mới do 3 ToF tự đo)
  */
-void Map_Init(uint8_t slot_top, uint8_t slot_bottom);
+void Map_Init(void);
 
 /**
  * @brief Chuyển tọa độ thực tế (mm) sang chỉ số (cột, hàng) trong ma trận

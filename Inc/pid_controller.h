@@ -39,6 +39,20 @@ void Motion_ProcessCommand(uint8_t cmd, int16_t data1, int16_t data2);
 /* Điều hướng tới tọa độ điểm đích (is_final_goal: true = điểm đích cuối cùng cần hãm tốc dừng xe; false = mốc trung gian ôm cua liên tục) */
 void Motion_NavToPoint(float target_x_mm, float target_y_mm, bool is_final_goal);
 
+/* Cập nhật góc hướng mục tiêu (khóa hướng theo tiếp tuyến) */
+void Motion_SetTargetHeading(float heading_deg);
+
+/* Kích hoạt chế độ ôm cung tròn vi sai ICR với góc tiếp tuyến thoát th2 cố định và lead-in braking */
+void Motion_StartArcICR(float radius_mm, int8_t dir, float target_exit_heading_deg,
+                        float tout_x, float tout_y, float u2_x, float u2_y,
+                        float next_target_x, float next_target_y, bool next_is_final);
+
+/* Kiểm tra xem xe có đang trong chế độ ôm cung tròn ICR hay không */
+bool Motion_IsArcActive(void);
+
+/* Kiểm tra xem xe có đang quay tại chỗ (NAV_STAGE_TURN / ROTATE_ANGLE / emergency spin) */
+bool Motion_IsTurningInPlace(void);
+
 /* Cập nhật vòng điều khiển PID (gọi định kỳ 100 Hz trong loop) */
 void Motion_Update(float dt_s);
 
@@ -58,6 +72,8 @@ void Motion_UpdateSensors(float left_mm, bool left_valid,
 
 /* Bật/tắt chế độ ép quay tại chỗ trong không gian hẹp */
 void Motion_SetTightSpace(bool is_tight);
+
+void Motion_NavToPointEx(float target_x_mm, float target_y_mm, bool is_final_goal, bool force_turn);
 
 /* Kiểm tra xem xe có đang trong không gian hẹp hay không */
 bool Motion_IsTightSpace(void);

@@ -16,12 +16,11 @@
 #define CMD_EMERGENCY_STOP   0x05U
 #define CMD_NAV_TO_POINT     0x06U
 #define CMD_DUMP_MAP         0x07U  /* Đã bỏ tính năng trích xuất bản đồ (Không dùng) */
-#define CMD_SET_OBSTACLES    0x08U  /* Thông báo 2 vị trí cản ngẫu nhiên (data1=slotTop, data2=slotBottom) */
 
 /*
  * Các trường RX tương ứng khung dây 8 byte:
  * header1, header2, command, data1 (int16 big-endian),
- * data2 (int16 big-endian), data3.
+ * data2 (int16 big-endian), checksum (Checksum cộng dồn 8-bit modulo 256 tính trên Byte 0..6).
  */
 typedef struct {
   uint8_t header1;
@@ -29,7 +28,7 @@ typedef struct {
   uint8_t command;
   int16_t data1;
   int16_t data2;
-  uint8_t data3;
+  uint8_t checksum;
 } UartProtocol_RxFrame;
 
 /* Mười lăm giá trị debug int16_t, tuần tự hóa big-endian sau header AA BB (tổng cộng 32 byte). */
@@ -64,7 +63,11 @@ HAL_StatusTypeDef UartProtocol_StartReceive(void);
 /* Đọc trạng thái nhận UART gần nhất và mã lỗi HAL để ứng dụng chẩn đoán sự cố. */
 HAL_StatusTypeDef UartProtocol_GetRxStatus(void);
 uint32_t UartProtocol_GetRxErrorCode(void);
+/* Tính mã kiểm tra Checksum cộng dồn 8-bit modulo 256 trên mảng dữ liệu. */
+uint8_t UartProtocol_CalcChecksum(const uint8_t *data, uint32_t len);
 /* Đọc số khung RX hoàn chỉnh bị bỏ do hàng đợi nhận đã đầy. */
 uint32_t UartProtocol_GetDroppedFrameCount(void);
+/* Đọc số khung RX bị loại bỏ do sai mã kiểm tra Checksum. */
+uint32_t UartProtocol_GetChecksumErrorCount(void);
 
 #endif

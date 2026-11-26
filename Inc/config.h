@@ -6,6 +6,7 @@
 /* Scheduler rates and servo-style motor pulse settings. */
 #define CONTROL_LOOP_FREQUENCY_HZ 100U
 #define UART_TELEMETRY_FREQUENCY_HZ 40U
+#define ENABLE_UART_COMM 1U /* 0 = tạm thời tắt giao tiếp USART2 để nhẹ CPU; 1 = bật lại */
 
 #define ODOMETRY_UPDATE_FREQUENCY_HZ 1000U
 #define ODOMETRY_TIMER_COUNTER_HZ 1000000U
@@ -123,7 +124,8 @@
 #define WHEEL_PID_KD                     0.005f  /* Hệ số D (vi phân): giảm dao động */
 #define WHEEL_PID_INTEGRAL_LIMIT         40.0f   /* Clamp tích phân I ±limit để chống windup */
 #define STRAIGHT_TARGET_SPEED_MM_S       300.0f  /* Vận tốc mục tiêu khi điều khiển thủ công W/S */
-#define NAV_CRUISE_SPEED_MM_S            300.0f  /* Vận tốc hành trình tới điểm đích (Nav) */
+#define NAV_CRUISE_SPEED_MM_S            300.0f  /* Vận tốc hành trình tới điểm đích ở nửa map đầu (X < 900 mm) */
+#define NAV_SCAN_ZONE_SPEED_MM_S         250.0f  /* Vận tốc hành trình thẳng & bánh ngoài ICR ở nửa map sau (X >= 900 mm) */
 #define NAV_MIN_SPEED_MM_S               35.0f   /* Vận tốc tối thiểu hãm tốc gần đích (thắng ma sát) */
 
 /* ── THAM SỐ PID XOAY GÓC (ROTATION PID) ───────────────────────────────────
@@ -155,14 +157,26 @@
  * ──────────────────────────────────────────────────────────────────────────── */
 #define NAV_TURN_TARGET_TOL_DEG          0.5f    /* Dung sai góc kết thúc xoay: vào vùng 0.5 độ là chạy thẳng ngay */
 #define NAV_HEADING_DEADBAND_DEG         0.5f    /* Vùng chết dung sai góc khi chạy thẳng (độ) */
-#define NAV_HEADING_KP                   8.0f    /* Hệ số P bám hướng (mm/s trên mỗi độ lệch) */
-#define NAV_HEADING_KD                   0.20f   /* Hệ số D giảm chấn tốc độ quay thân xe (mm/s trên mỗi dps) */
+#define NAV_HEADING_KP                   14.0f   /* Hệ số P bám hướng (mm/s trên mỗi độ lệch) */
+#define NAV_HEADING_KD                   0.32f   /* Hệ số D giảm chấn tốc độ quay thân xe (mm/s trên mỗi dps) */
 #define MAX_STRAIGHT_CORRECTION_MM_S     220.0f  /* Mức bù vi sai tối đa khi chạy thẳng giữ hướng (mm/s) */
 #define MAX_CORNER_CORRECTION_MM_S       320.0f  /* Mức giảm tốc/vi sai tối đa của bánh trong khi ôm cua gắt (mm/s) */
 #define NAV_CORNER_BLEND_RADIUS_MM       28.0f   /* Bán kính uốn cua chuyển mốc (mm) */
 #define NAV_WAYPOINT_PASS_DIST_MM        4.0f    /* Khoảng cách xe tiến sát/vượt qua mốc trước khi rẽ fillet (mm) */
 #define NAV_PIVOT_OUTER_SPEED_MM_S       160.0f  /* Tốc độ bánh ngoài khi ôm cua gắt pivot quanh bánh trong dừng hẳn (mm/s) */
 #define NAV_MAX_ARC_CORNER_ANGLE_DEG     95.0f   /* Góc lệch tối đa cho phép ôm cua động liên tục không dừng xe (độ) */
+
+/* ── THAM SỐ ÔM CUA ĐỘNG HỌC VI SAI (ICR TANGENT FILLET & ARC SAFETY) ─────── */
+#define NAV_ARC_OUTER_SPEED_MM_S         300.0f  /* Vận tốc bánh ngoài tối đa khi ôm cung tròn ICR (mm/s) */
+#define NAV_ARC_RADIUS_NOMINAL_MM        80.0f   /* Bán kính cung tròn ICR danh định (mm) */
+#define NAV_ARC_CLEARANCE_MIN_MM         50.0f   /* Khoảng cách an toàn tối thiểu tới vật cản khi ôm cua (mm) */
+#define NAV_TANGENT_TOL_LATERAL_MM       40.0f   /* Dung sai độ lệch ngang vuông góc với tim đường tại tiếp tuyến Tin (mm) */
+#define NAV_TANGENT_LEAD_DIST_MM         18.0f   /* Cự ly đón trước vạch Tin bù quán tính giảm tốc bánh trong (mm) */
+#define NAV_TANGENT_PASS_DIST_MM         35.0f   /* Cự ly vượt lố tối đa qua vạch Tin theo chiều dọc trước khi hủy cua ICR (mm) */
+#define NAV_TANGENT_TOL_DIST_MM          NAV_TANGENT_TOL_LATERAL_MM /* Tương thích ngược */
+#define NAV_TANGENT_TOL_ANG_DEG          15.0f   /* Dung sai góc hướng tiếp tuyến Tin (độ) */
+#define NAV_HEADING_ALIGN_TOL_DEG        2.0f    /* Dung sai góc ngắm để ngắt cung tròn trả thẳng (độ) */
+#define NAV_SPIN_PWM                     30.0f   /* Tốc độ quay tại chỗ quanh tâm xe khi cung tròn bị cản */
 
 /* ── CẤU HÌNH KẾT HỢP GYROZ VÀO ODOMETRY ─────────────────────────────────────
  * ODOMETRY_USE_GYRO_FUSION:

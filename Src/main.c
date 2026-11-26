@@ -14,17 +14,17 @@
 #include "map_grid.h"
 #include "astar.h"
 
-/* Biến cờ chế độ quét và lưu bản đồ độc lập trên STM32 */
-static bool isMappingModeActive = false;
-
-
-
+#if ENABLE_UART_COMM != 0U
 /* Tổng chu kỳ CPU bận trong cửa sổ tải hiện tại; thời gian ngủ WFI không tính. */
 static uint32_t cpuBusyCyclesWindow;
 static uint32_t cpuLoadWindowStartTick;
-/* Tải CPU theo 0,1%; 123 tương ứng 12,3%, gửi qua telemetry.data2. */
+/* Tải CPU theo 0,1%; 123 tương ứng 12,3%, gửi qua telemetry.data14. */
 static uint16_t cpuLoadTenthsPercent;
 static UartProtocol_Telemetry debugTelemetry;
+static float x_left, x_right, x_mid;
+static float y_left, y_right, y_mid;
+#endif
+
 static Odometry_State debugOdometryState;
 static uint16_t debugLeftDistanceMm;
 static uint16_t debugMidDistanceMm;
@@ -32,9 +32,6 @@ static uint16_t debugRightDistanceMm;
 static bool LeftValid;
 static bool MidValid;
 static bool RightValid;
-
-static float x_left, x_right, x_mid;
-static float y_left, y_right, y_mid;
 
 /* Bộ đếm số tick timer odometry đã đến hạn; volatile vì được cộng dồn trong ngắt TIM3. */
 static volatile uint16_t odometryUpdatePending;
@@ -48,12 +45,6 @@ void TIM3_IRQHandler(void) {
   }
 }
 
-/*
- * Yield callback đăng ký với I2cBus: được gọi trong vòng chờ DMA của ToF.
- * Nếu TIM3 đã phát sinh tick odometry trong lúc DMA đang chạy, hàm này xử lý ngay
- * thay vì để odometry bị trễ cho đến khi I2C hoàn tất.
- * Không dùng taskRan vì đây là ngữ cảnh yield, không phải vòng lặp chính.
- */
 static void I2cYield_ProcessOdometry(void) {
   uint32_t primask = __get_PRIMASK();
   uint16_t dueTicks = 0U;
@@ -75,32 +66,29 @@ static void I2cYield_ProcessOdometry(void) {
 
 
 
+#if ENABLE_UART_COMM != 0U
 static void readUart(void){
   UartProtocol_RxFrame rxFrame;
   HAL_StatusTypeDef receiveStatus;
   do {
     receiveStatus = UartProtocol_Receive(&rxFrame);
     if (receiveStatus == HAL_OK) {
-      if (rxFrame.command == CMD_SET_OBSTACLES) {
-        /* Thông báo trước 2 vị trí vật cản ngẫu nhiên từ Web: slotTop (1 hoặc 2), slotBottom (3 hoặc 4) */
-        uint8_t slotTop = (uint8_t)rxFrame.data1;
-        uint8_t slotBottom = (uint8_t)rxFrame.data2;
-        Map_Init(slotTop, slotBottom);
-      } else {
-        /* Chuyển mã lệnh và dữ liệu vào bộ điều khiển chuyển động PID */
-        Motion_ProcessCommand(rxFrame.command, rxFrame.data1, rxFrame.data2);
-      }
+      /* Chuyển mã lệnh và dữ liệu vào bộ điều khiển chuyển động PID */
+      Motion_ProcessCommand(rxFrame.command, rxFrame.data1, rxFrame.data2);
     } else if (receiveStatus != HAL_BUSY) {
       /* [FIX 1.4] Lỗi UART nhận: bỏ qua, StartReceive sẽ được gọi lại từ ErrorCallback */
     }
   } while (receiveStatus == HAL_OK);
 }
+#endif
 
 
 
 
 static void loop(void) {
+#if ENABLE_UART_COMM != 0U
   readUart();
+#endif
 
   /* Chu kỳ điều khiển vòng lặp chính 100 Hz (dt = 0.01 giây) */
   const float dt_s = 1.0f / (float)CONTROL_LOOP_FREQUENCY_HZ;
@@ -110,26 +98,21 @@ static void loop(void) {
 
 
 static void debug(void) {
+  /* Cập nhật khoảng cách cảm biến cho bộ điều khiển tự động và bộ điều hướng chuyển động
+   * (Nửa map đầu X < 900mm không dùng ToF để tránh nhiễu / bật nhầm không gian hẹp) */
+  bool tofActiveHalf = (debugOdometryState.x_mm >= 900.0f);
+  Auto_UpdateSensors((float)debugLeftDistanceMm, tofActiveHalf ? LeftValid : false,
+                     (float)debugMidDistanceMm,  tofActiveHalf ? MidValid : false,
+                     (float)debugRightDistanceMm, tofActiveHalf ? RightValid : false);
+  Motion_UpdateSensors((float)debugLeftDistanceMm, tofActiveHalf ? LeftValid : false,
+                       (float)debugMidDistanceMm,  tofActiveHalf ? MidValid : false,
+                       (float)debugRightDistanceMm, tofActiveHalf ? RightValid : false);
+
+#if ENABLE_UART_COMM != 0U
   /* Tính tọa độ vật thể/tường phát hiện bởi 3 cảm biến ToF dựa trên navigation và pose xe */
   leftpose((float)debugLeftDistanceMm, debugOdometryState.x_mm, debugOdometryState.y_mm, debugOdometryState.heading_deg, &x_left, &y_left);
   midpose((float)debugMidDistanceMm, debugOdometryState.x_mm, debugOdometryState.y_mm, debugOdometryState.heading_deg, &x_mid, &y_mid);
   rightpose((float)debugRightDistanceMm, debugOdometryState.x_mm, debugOdometryState.y_mm, debugOdometryState.heading_deg, &x_right, &y_right);
-
-  /* Khi bật chế độ quét: STM32 quét và lưu vào ma trận 60x40 (3cm) độc lập, không ảnh hưởng web */
-  if (isMappingModeActive) {
-    Map_UpdateAllSensors(debugOdometryState.x_mm, debugOdometryState.y_mm, debugOdometryState.heading_deg,
-                         x_left, y_left, LeftValid,
-                         x_mid, y_mid, MidValid,
-                         x_right, y_right, RightValid);
-  }
-
-  /* Cập nhật khoảng cách cảm biến cho bộ điều khiển tự động và bộ điều hướng chuyển động */
-  Auto_UpdateSensors((float)debugLeftDistanceMm, LeftValid,
-                     (float)debugMidDistanceMm, MidValid,
-                     (float)debugRightDistanceMm, RightValid);
-  Motion_UpdateSensors((float)debugLeftDistanceMm, LeftValid,
-                       (float)debugMidDistanceMm, MidValid,
-                       (float)debugRightDistanceMm, RightValid);
 
   debugTelemetry.data1  = (int16_t)debugOdometryState.x_mm;
   debugTelemetry.data2  = (int16_t)debugOdometryState.y_mm;
@@ -144,9 +127,9 @@ static void debug(void) {
   debugTelemetry.data11 = (int16_t)debugLeftDistanceMm;
   debugTelemetry.data12 = (int16_t)debugMidDistanceMm;
   debugTelemetry.data13 = (int16_t)debugRightDistanceMm;
-  /* Truyền tải CPU (x10). Nếu đang bật chế độ quét map, đổi dấu âm để Web & ESP32 nhận biết tức thời */
-  debugTelemetry.data14 = isMappingModeActive ? (int16_t)(-(int16_t)cpuLoadTenthsPercent - 1) : (int16_t)cpuLoadTenthsPercent;
+  debugTelemetry.data14 = (int16_t)cpuLoadTenthsPercent;
   debugTelemetry.data15 = Motion_GetFeedbackStatusWord();
+#endif
 }
 
 
@@ -185,7 +168,7 @@ int main(void) {
     while ((HAL_GetTick() - startupTick) < 3000U) {
       if (fastBlinkDone == 0U && (HAL_GetTick() - startupTick) >= 480U) {
         /* Chuyển sang nhấp nháy chậm liên tục */
-        Led_SetPattern(1U, 1U, 250U, 500U, 0U);
+        Led_SetPattern(1U, 1U, 250U, 500U, 250U);
         fastBlinkDone = 1U;
       }
       Led_Update();
@@ -197,8 +180,8 @@ int main(void) {
     Led_Update();
   }
 
-  /* Khởi tạo bản đồ 60x40 độ phân giải 3cm với 17 cản tĩnh và vùng cấm chữ U */
-  Map_Init(0, 0);
+  /* Khởi tạo bản đồ tĩnh 60x40 độ phân giải 3cm với 17 cản tĩnh và vùng cấm chữ U */
+  Map_Init();
 
 
   /* Khởi tạo các ngoại vi và cảm biến */
@@ -221,9 +204,11 @@ int main(void) {
   }
   Motion_Init();
   Auto_Init();
+#if ENABLE_UART_COMM != 0U
   if (UartProtocol_Init() != HAL_OK) {
     Error_Handler();
   }
+#endif
   if (TofSensors_Init() != HAL_OK) {
     Error_Handler();
   }
@@ -238,14 +223,18 @@ int main(void) {
   DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
  
   odometryUpdatePending = 0U;
+#if ENABLE_UART_COMM != 0U
   cpuBusyCyclesWindow = 0U;
   cpuLoadTenthsPercent = 0U;
+#endif
   /* Bắt đầu nhịp TIM3 */
   Config_OdometryTimer_Start();
 
   /* Khởi tạo deadline tuyệt đối để các task giữ được tần số đã cấu hình. */
   uint32_t startTick = HAL_GetTick();
+#if ENABLE_UART_COMM != 0U
   cpuLoadWindowStartTick = startTick;
+#endif
   nextLoopTick = startTick + loopPeriodMs;
   nextTelemetryTick = startTick + telemetryPeriodMs;
 
@@ -254,22 +243,21 @@ int main(void) {
 
 
   while (1) {
+#if ENABLE_UART_COMM != 0U
     uint32_t workStartCycles = DWT->CYCCNT;
+#endif
     uint32_t now = HAL_GetTick();
     uint8_t taskRan = 0U;
 
     Led_Update();
     Button_Update();
 
-    /* Đồng bộ cờ quét map từ bộ điều khiển tự động */
-    isMappingModeActive = Auto_IsMappingActive();
-
-    /* Nút 1: Kích hoạt Vòng 1 (Quét map & Chạy A*) */
+    /* Nút 1 click: Xuất phát chạy tự động theo lộ trình */
     if (b1.click()) {
       Auto_OnButton1();
     }
 
-    /* Nút 2: Kích hoạt Vòng 2 (Reset Odometry & Chạy chính thức) */
+    /* Nút 2 click: Dừng khẩn cấp */
     if (b2.click()) {
       Auto_OnButton2();
     }
@@ -306,7 +294,7 @@ int main(void) {
       taskRan = 1U;
     }
 
-    /* Đóng gói trạng thái odometry và hai trường dữ liệu ứng dụng để gửi UART. */
+    /* Đọc cảm biến ToF 40 Hz (và đóng gói/gửi UART nếu ENABLE_UART_COMM != 0U). */
     if ((int32_t)(now - nextTelemetryTick) >= 0) {
       if (Odometry_GetState(&debugOdometryState) != HAL_OK) {
         Error_Handler();
@@ -316,9 +304,11 @@ int main(void) {
       }
       debug();
 
+#if ENABLE_UART_COMM != 0U
       if (UartProtocol_SendTelemetry(&debugTelemetry) != HAL_OK) {
         /* [FIX 1.1] UART TX bận: bỏ qua gói này, không gọi Error_Handler */
       }
+#endif
 
       nextTelemetryTick += telemetryPeriodMs;
       /* Bỏ qua deadline lỡ nhịp thay vì phát liên tiếp nhiều packet bù. */
@@ -328,6 +318,12 @@ int main(void) {
       taskRan = 1U;
     }
 
+    /* Thực thi một vi lát cắt (< 300 us) của bộ lập đường né A* không chặn rồi nhường lại cho TIM3 1 kHz */
+    if (Auto_StepPlannerSlice()) {
+      taskRan = 1U;
+    }
+
+#if ENABLE_UART_COMM != 0U
     /*
      * Chốt thời điểm trước WFI để thời gian ngủ không tính là CPU bận.
      * Chênh lệch CYCCNT của lượt này được cộng vào bộ tích lũy tải CPU.
@@ -344,6 +340,7 @@ int main(void) {
       cpuBusyCyclesWindow = 0U;
       cpuLoadWindowStartTick = HAL_GetTick();
     }
+#endif
 
     if (taskRan == 0U) {
       /*

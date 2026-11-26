@@ -8,7 +8,7 @@
 uint8_t g_map_grid[MAP_ROWS][MAP_COLS];
 
 /* Danh sách 17 vật cản tĩnh cố định T1 -> T17 (tọa độ mm) */
-static const Map_ObstacleDef g_static_obstacles[STATIC_OBSTACLE_COUNT] = {
+const Map_ObstacleDef g_static_obstacles[STATIC_OBSTACLE_COUNT] = {
     {"T1",   50.0f,  150.0f},
     {"T2",  550.0f,  250.0f},
     {"T3",  300.0f,  350.0f},
@@ -26,14 +26,6 @@ static const Map_ObstacleDef g_static_obstacles[STATIC_OBSTACLE_COUNT] = {
     {"T15", 1450.0f,  450.0f},
     {"T16", 1450.0f,  150.0f},
     {"T17", 1750.0f,  250.0f}
-};
-
-/* 4 vị trí cản ngẫu nhiên tiềm năng */
-static const Map_ObstacleDef g_candidate_slots[4] = {
-    {"Slot1", 1450.0f, 650.0f}, /* Nhóm trên 1 */
-    {"Slot2", 1550.0f, 950.0f}, /* Nhóm trên 2 */
-    {"Slot3", 1550.0f, 350.0f}, /* Nhóm dưới 3 */
-    {"Slot4", 1350.0f, 550.0f}  /* Nhóm dưới 4 */
 };
 
 /* Chuyển tọa độ mm sang chỉ số cột và hàng */
@@ -111,8 +103,8 @@ void Map_MarkBox(float x_min_mm, float x_max_mm, float y_min_mm, float y_max_mm,
     }
 }
 
-/* Khởi tạo toàn bộ bản đồ theo chuẩn sa bàn */
-void Map_Init(uint8_t slot_top, uint8_t slot_bottom) {
+/* Khởi tạo toàn bộ bản đồ tĩnh theo chuẩn sa bàn (không biết trước vật cản ngẫu nhiên) */
+void Map_Init(void) {
     /* 1. Mặc định toàn bộ sa bàn là 1 (Chưa quét) */
     memset(g_map_grid, MAP_VAL_UNEXPLORED, sizeof(g_map_grid));
 
@@ -132,20 +124,7 @@ void Map_Init(uint8_t slot_top, uint8_t slot_bottom) {
         Map_MarkBox(cx - 50.0f, cx + 50.0f, cy - 50.0f, cy + 50.0f, MAP_VAL_OBSTACLE);
     }
 
-    /* 4. Kích hoạt 2 vị trí cản ngẫu nhiên được báo trước:
-     *    slot_top: 1 hoặc 2
-     *    slot_bottom: 3 hoặc 4
-     */
-    for (uint8_t i = 0; i < 4; i++) {
-        uint8_t slotId = i + 1;
-        if (slotId == slot_top || slotId == slot_bottom) {
-            float cx = g_candidate_slots[i].x_mm;
-            float cy = g_candidate_slots[i].y_mm;
-            Map_MarkBox(cx - 50.0f, cx + 50.0f, cy - 50.0f, cy + 50.0f, MAP_VAL_OBSTACLE);
-        }
-    }
-
-    /* 5. Vùng xuất phát của xe (quanh tọa độ 300 mm, 0 mm):
+    /* 4. Vùng xuất phát của xe (quanh tọa độ 300 mm, 0 mm):
      *    Đánh dấu là 0 (Không vật cản) vì xe đang đỗ tại đó
      */
     Map_MarkBox(240.0f, 360.0f, 0.0f, 90.0f, MAP_VAL_FREE);
