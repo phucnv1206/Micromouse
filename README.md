@@ -22,7 +22,7 @@ Khác với các dòng Micromouse truyền thống chỉ chạy thuật toán qu
 
 | Linh Kiện | Số Lượng | Mô Tả & Thông Số Kỹ Thuật | Vai Trò Trong Xe |
 |---|:---:|---|---|
-| **MCU STM32F401RCT6** | 1 | ARM Cortex-M4 có FPU, 84 MHz, 256KB Flash, 64KB SRAM (LQFP64) | Xử lý trung tâm: Odometry, đọc cảm biến, bộ lọc Kalman, thuật toán A*, PID động cơ |
+| **MCU STM32F401RCT6** | 1 | ARM Cortex-M4 có FPU, 84 MHz, 256KB Flash, 64KB SRAM (LQFP64) | Xử lý trung tâm: Odometry, đọc cảm biến, bù trôi GyroZ & ZUPT, thuật toán A*, PID động cơ |
 | **ESP32-S3 Mini** | 1 | Vi điều khiển kép Xtensa LX7, Wi-Fi 2.4GHz & BLE 5.0 | Mạch đế truyền thông: Cầu nối UART ↔ Web Dashboard (USB Serial & Wi-Fi WebSocket) |
 | **Động cơ N20 + Encoder** | 2 | Động cơ giảm tốc kim loại N20 (99:1), Encoder từ 28 xung/vòng motor | Dẫn động 2 bánh vi sai độc lập, phản hồi xung góc quay chính xác |
 | **Driver Động Cơ** | 1 | Mạch cầu H (tận dụng từ servo MG90S) | Nhận xung điều khiển PWM 50Hz từ STM32 để kéo 2 động cơ N20 |
@@ -63,8 +63,8 @@ Chi tiết kết nối chân vi điều khiển và sơ đồ nguyên lý phần
 * Quản lý vật cản tĩnh cố định và tự động phát hiện, xác nhận vật cản ngẫu nhiên từ dữ liệu ToF thời gian thực.
 * Tự động làm mịn đường đi và trích xuất chuỗi điểm mốc điều hướng tối ưu.
 
-### 4.4. Hợp Nhất Cảm Biến Kalman Filter (Gyro Z + Wheel Odometry)
-* Kết hợp vận tốc góc từ Gyro Z MPU6500 với tích phân góc quay từ 2 Encoder vi sai, loại bỏ hiện tượng trôi góc (Drift) do trượt bánh trên mặt sàn.
+### 4.4. Bù Trôi Gyro Z & Khóa Đứng Yên ZUPT (Gyro Z + Wheel Odometry)
+* Dùng vận tốc góc từ Gyro Z MPU6500 đã bù trôi kết hợp khóa đứng yên ZUPT khi hai bánh dừng (dự phòng Encoder khi không có Gyro), loại bỏ hiện tượng trôi góc khi đứng yên và sai số lượng tử hóa khi quay chậm.
 
 ---
 
@@ -110,10 +110,10 @@ micromouse/
 ├── Inc/
 │   ├── astar.h               # Thuật toán tìm đường A* và quản lý vòng chạy 1 & 2
 │   ├── button.h              # Xử lý nút bấm (click, double click, hold)
-│   ├── config.h              # Cấu hình toàn bộ thông số: PID (us), Odometry, Kalman, ngưỡng cua
+│   ├── config.h              # Cấu hình toàn bộ thông số: PID (us), Odometry, GyroZ/ZUPT, ngưỡng cua
 │   ├── encoder.h             # Đọc xung EXTI từ encoder 2 bánh
 │   ├── i2c_bus.h             # Giao tiếp I2C1 (ToF) & I2C2 (MPU6500)
-│   ├── kalman_filter.h       # Bộ lọc Kalman phối hợp Odometry và Gyro Z
+│   ├── gyro_zupt.h           # Bù trôi Gyro Z & khóa đứng yên ZUPT cho góc hướng Odometry
 │   ├── led.h                 # Điều khiển LED đa chế độ (chớp, sáng liên tục, báo lỗi)
 │   ├── map_grid.h            # Ma trận lưới bản đồ 60x40 ô & hàm cập nhật tia ToF
 │   ├── motor_pwm.h           # Điều khiển PWM TIM1 & TIM11 trực tiếp theo micro-giây (us)
@@ -128,7 +128,7 @@ micromouse/
 │   ├── astar.c
 │   ├── config.c
 │   ├── encoder.c
-│   ├── kalman_filter.c
+│   ├── gyro_zupt.c
 │   ├── main.c               # Vòng lặp chính, lập lịch task cooperative 1000Hz/100Hz/40Hz
 │   ├── map_grid.c
 │   ├── motor_pwm.c

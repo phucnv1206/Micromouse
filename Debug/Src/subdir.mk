@@ -10,7 +10,7 @@ C_SRCS += \
 ../Src/config.c \
 ../Src/encoder.c \
 ../Src/i2c_bus.c \
-../Src/kalman_filter.c \
+../Src/gyro_zupt.c \
 ../Src/led.c \
 ../Src/main.c \
 ../Src/map_grid.c \
@@ -34,7 +34,7 @@ OBJS += \
 ./Src/config.o \
 ./Src/encoder.o \
 ./Src/i2c_bus.o \
-./Src/kalman_filter.o \
+./Src/gyro_zupt.o \
 ./Src/led.o \
 ./Src/main.o \
 ./Src/map_grid.o \
@@ -58,7 +58,7 @@ C_DEPS += \
 ./Src/config.d \
 ./Src/encoder.d \
 ./Src/i2c_bus.d \
-./Src/kalman_filter.d \
+./Src/gyro_zupt.d \
 ./Src/led.d \
 ./Src/main.d \
 ./Src/map_grid.d \
@@ -84,7 +84,7 @@ Src/%.o Src/%.su Src/%.cyclo: ../Src/%.c Src/subdir.mk
 clean: clean-Src
 
 clean-Src:
-	-$(RM) ./Src/astar.cyclo ./Src/astar.d ./Src/astar.o ./Src/astar.su ./Src/button.cyclo ./Src/button.d ./Src/button.o ./Src/button.su ./Src/config.cyclo ./Src/config.d ./Src/config.o ./Src/config.su ./Src/encoder.cyclo ./Src/encoder.d ./Src/encoder.o ./Src/encoder.su ./Src/i2c_bus.cyclo ./Src/i2c_bus.d ./Src/i2c_bus.o ./Src/i2c_bus.su ./Src/kalman_filter.cyclo ./Src/kalman_filter.d ./Src/kalman_filter.o ./Src/kalman_filter.su ./Src/led.cyclo ./Src/led.d ./Src/led.o ./Src/led.su ./Src/main.cyclo ./Src/main.d ./Src/main.o ./Src/main.su ./Src/map_grid.cyclo ./Src/map_grid.d ./Src/map_grid.o ./Src/map_grid.su ./Src/motor_pwm.cyclo ./Src/motor_pwm.d ./Src/motor_pwm.o ./Src/motor_pwm.su ./Src/mpu6500.cyclo ./Src/mpu6500.d ./Src/mpu6500.o ./Src/mpu6500.su ./Src/navigation.cyclo ./Src/navigation.d ./Src/navigation.o ./Src/navigation.su ./Src/odometry.cyclo ./Src/odometry.d ./Src/odometry.o ./Src/odometry.su ./Src/pid_controller.cyclo ./Src/pid_controller.d ./Src/pid_controller.o ./Src/pid_controller.su ./Src/stm32f4xx_hal_msp.cyclo ./Src/stm32f4xx_hal_msp.d ./Src/stm32f4xx_hal_msp.o ./Src/stm32f4xx_hal_msp.su ./Src/stm32f4xx_it.cyclo ./Src/stm32f4xx_it.d ./Src/stm32f4xx_it.o ./Src/stm32f4xx_it.su ./Src/system_stm32f4xx.cyclo ./Src/system_stm32f4xx.d ./Src/system_stm32f4xx.o ./Src/system_stm32f4xx.su ./Src/tof_sensors.cyclo ./Src/tof_sensors.d ./Src/tof_sensors.o ./Src/tof_sensors.su ./Src/tof_xshut.cyclo ./Src/tof_xshut.d ./Src/tof_xshut.o ./Src/tof_xshut.su ./Src/uart_protocol.cyclo ./Src/uart_protocol.d ./Src/uart_protocol.o ./Src/uart_protocol.su ./Src/vl53l0x_stm32f4_port.cyclo ./Src/vl53l0x_stm32f4_port.d ./Src/vl53l0x_stm32f4_port.o ./Src/vl53l0x_stm32f4_port.su ./Src/vl53l1x_stm32f4_port.cyclo ./Src/vl53l1x_stm32f4_port.d ./Src/vl53l1x_stm32f4_port.o ./Src/vl53l1x_stm32f4_port.su
+	-$(RM) ./Src/astar.cyclo ./Src/astar.d ./Src/astar.o ./Src/astar.su ./Src/button.cyclo ./Src/button.d ./Src/button.o ./Src/button.su ./Src/config.cyclo ./Src/config.d ./Src/config.o ./Src/config.su ./Src/encoder.cyclo ./Src/encoder.d ./Src/encoder.o ./Src/encoder.su ./Src/i2c_bus.cyclo ./Src/i2c_bus.d ./Src/i2c_bus.o ./Src/i2c_bus.su ./Src/gyro_zupt.cyclo ./Src/gyro_zupt.d ./Src/gyro_zupt.o ./Src/gyro_zupt.su ./Src/led.cyclo ./Src/led.d ./Src/led.o ./Src/led.su ./Src/main.cyclo ./Src/main.d ./Src/main.o ./Src/main.su ./Src/map_grid.cyclo ./Src/map_grid.d ./Src/map_grid.o ./Src/map_grid.su ./Src/motor_pwm.cyclo ./Src/motor_pwm.d ./Src/motor_pwm.o ./Src/motor_pwm.su ./Src/mpu6500.cyclo ./Src/mpu6500.d ./Src/mpu6500.o ./Src/mpu6500.su ./Src/navigation.cyclo ./Src/navigation.d ./Src/navigation.o ./Src/navigation.su ./Src/odometry.cyclo ./Src/odometry.d ./Src/odometry.o ./Src/odometry.su ./Src/pid_controller.cyclo ./Src/pid_controller.d ./Src/pid_controller.o ./Src/pid_controller.su ./Src/stm32f4xx_hal_msp.cyclo ./Src/stm32f4xx_hal_msp.d ./Src/stm32f4xx_hal_msp.o ./Src/stm32f4xx_hal_msp.su ./Src/stm32f4xx_it.cyclo ./Src/stm32f4xx_it.d ./Src/stm32f4xx_it.o ./Src/stm32f4xx_it.su ./Src/system_stm32f4xx.cyclo ./Src/system_stm32f4xx.d ./Src/system_stm32f4xx.o ./Src/system_stm32f4xx.su ./Src/tof_sensors.cyclo ./Src/tof_sensors.d ./Src/tof_sensors.o ./Src/tof_sensors.su ./Src/tof_xshut.cyclo ./Src/tof_xshut.d ./Src/tof_xshut.o ./Src/tof_xshut.su ./Src/uart_protocol.cyclo ./Src/uart_protocol.d ./Src/uart_protocol.o ./Src/uart_protocol.su ./Src/vl53l0x_stm32f4_port.cyclo ./Src/vl53l0x_stm32f4_port.d ./Src/vl53l0x_stm32f4_port.o ./Src/vl53l0x_stm32f4_port.su ./Src/vl53l1x_stm32f4_port.cyclo ./Src/vl53l1x_stm32f4_port.d ./Src/vl53l1x_stm32f4_port.o ./Src/vl53l1x_stm32f4_port.su
 
 .PHONY: clean-Src
 

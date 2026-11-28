@@ -7,7 +7,7 @@
 #include "button.h"
 #include "tof_sensors.h"
 #include "mpu6500.h"
-#include "kalman_filter.h"
+#include "gyro_zupt.h"
 #include "pid_controller.h"
 #include "i2c_bus.h"
 #include "navigation.h"
@@ -117,7 +117,7 @@ static void debug(void) {
   debugTelemetry.data1  = (int16_t)debugOdometryState.x_mm;
   debugTelemetry.data2  = (int16_t)debugOdometryState.y_mm;
   debugTelemetry.data3  = (int16_t)debugOdometryState.heading_deg;
-  debugTelemetry.data4  = (int16_t)KalmanOdometry_GetAngularVelocity();
+  debugTelemetry.data4  = (int16_t)GyroZupt_GetAngularVelocity();
   debugTelemetry.data5  = (int16_t)x_left;
   debugTelemetry.data6  = (int16_t)y_left;
   debugTelemetry.data7  = (int16_t)x_mid;

@@ -1,6 +1,6 @@
 ﻿#include "pid_controller.h"
 #include "motor_pwm.h"
-#include "kalman_filter.h"
+#include "gyro_zupt.h"
 #include "odometry.h"
 #include "config.h"
 #include <math.h>
@@ -287,7 +287,7 @@ void Motion_NavToPointEx(float targetX, float targetY, bool isFinalGoal, bool fo
   while (pathAngleDeg >= 360.0f) pathAngleDeg -= 360.0f;
   while (pathAngleDeg < 0.0f)   pathAngleDeg += 360.0f;
 
-  float currentHeading = KalmanOdometry_GetHeading();
+  float currentHeading = GyroZupt_GetHeading();
   float initialAngleErr = NormalizeAngleDiff(pathAngleDeg, currentHeading);
 
   navTargetX = targetX;
@@ -482,7 +482,7 @@ void Motion_ProcessCommand(uint8_t cmd, int16_t data1, int16_t data2) {
         /* Nếu là lệnh đi thẳng (W tiến: r == l > 0, hoặc S lùi: r == l < 0) */
         if (r == l && r != 0) {
           if (!straightLockActive) {
-            straightTargetHeadingDeg = KalmanOdometry_GetHeading();
+            straightTargetHeadingDeg = GyroZupt_GetHeading();
             straightLockActive = true;
             WheelSpeedPID_Reset(&s_pid_right);
             WheelSpeedPID_Reset(&s_pid_left);
@@ -517,7 +517,7 @@ void Motion_ProcessCommand(uint8_t cmd, int16_t data1, int16_t data2) {
         return;
       }
 
-      float currentHeading = KalmanOdometry_GetHeading();
+      float currentHeading = GyroZupt_GetHeading();
       targetHeadingDeg = currentHeading + (float)data1;
       while (targetHeadingDeg >= 360.0f) targetHeadingDeg -= 360.0f;
       while (targetHeadingDeg < 0.0f)   targetHeadingDeg += 360.0f;
@@ -581,8 +581,8 @@ void Motion_Update(float dt_s) {
 
     /* PID điều khiển vận tốc 2 bánh xe khi bấm W (tiến) hoặc S (lùi) */
     if (straightLockActive && straightTargetSpeedMmS != 0.0f) {
-      float currentHeading = KalmanOdometry_GetHeading();
-      float currentOmega   = KalmanOdometry_GetAngularVelocity();
+      float currentHeading = GyroZupt_GetHeading();
+      float currentOmega   = GyroZupt_GetAngularVelocity();
       float errorHeading   = NormalizeAngleDiff(straightTargetHeadingDeg, currentHeading);
 
       /* Heading-hold: tính hiệu chỉnh tốc độ vi sai (mm/s) giữa 2 bánh */
@@ -620,8 +620,8 @@ void Motion_Update(float dt_s) {
 
   if (currentMode == MOTION_MODE_ROTATE_ANGLE) {
     /* Vòng lặp điều khiển PID xoay góc tại chỗ */
-    float currentHeading = KalmanOdometry_GetHeading();
-    float currentOmega = KalmanOdometry_GetAngularVelocity();
+    float currentHeading = GyroZupt_GetHeading();
+    float currentOmega = GyroZupt_GetAngularVelocity();
     float errorAngle = NormalizeAngleDiff(targetHeadingDeg, currentHeading);
     float absErr = fabsf(errorAngle);
 
@@ -721,8 +721,8 @@ void Motion_Update(float dt_s) {
 
     /* Giai đoạn 1: Quay đầu hướng về tọa độ điểm đích */
     if (navStage == NAV_STAGE_TURN) {
-      float currentHeading = KalmanOdometry_GetHeading();
-      float currentOmega = KalmanOdometry_GetAngularVelocity();
+      float currentHeading = GyroZupt_GetHeading();
+      float currentOmega = GyroZupt_GetAngularVelocity();
       float errorAngle = NormalizeAngleDiff(navTargetHeadingDeg, currentHeading);
       float absErr = fabsf(errorAngle);
 
@@ -803,7 +803,7 @@ void Motion_Update(float dt_s) {
       float actualR = odom.wheel_linear_mm_s[ENCODER_RIGHT];
       float actualL = odom.wheel_linear_mm_s[ENCODER_LEFT];
 
-      float currentHeading = KalmanOdometry_GetHeading();
+      float currentHeading = GyroZupt_GetHeading();
       float errHead = NormalizeAngleDiff(s_arcTargetHeadingDeg, currentHeading);
       float absErr = fabsf(errHead);
       float remAngle = (s_arcDirection > 0) ? errHead : -errHead;
@@ -948,8 +948,8 @@ void Motion_Update(float dt_s) {
         navTargetHeadingDeg = directAngleDeg;
       }
 
-      float currentHeading = KalmanOdometry_GetHeading();
-      float currentOmega   = KalmanOdometry_GetAngularVelocity();
+      float currentHeading = GyroZupt_GetHeading();
+      float currentOmega   = GyroZupt_GetAngularVelocity();
       float errorHeading   = NormalizeAngleDiff(directAngleDeg, currentHeading);
       float absHeadingErr  = fabsf(errorHeading);
 

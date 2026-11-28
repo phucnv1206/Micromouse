@@ -1,7 +1,7 @@
 #include "main.h"
 #include "odometry.h"
 #include "config.h"
-#include "kalman_filter.h"
+#include "gyro_zupt.h"
 #include "mpu6500.h"
 #include <math.h>
 
@@ -69,7 +69,7 @@ HAL_StatusTypeDef Odometry_Init(void) {
   speed_window_sample_count = 0U;
 
   float initial_bias = Mpu6500_GetGyroBias();
-  KalmanOdometry_Init(ODOMETRY_INITIAL_HEADING_DEG, initial_bias);
+  GyroZupt_Init(ODOMETRY_INITIAL_HEADING_DEG, initial_bias);
 
   odometry_initialized = 1U;
   return HAL_OK;
@@ -160,25 +160,25 @@ HAL_StatusTypeDef Odometry_Update(uint16_t elapsed_ticks) {
   uint8_t gyro_available = (Mpu6500_GetReadCount() > 0U) ? 1U : 0U;
 
   if (gyro_available != 0U) {
-    /* 1. Bước dự báo Kalman theo chu kỳ dt_s thực tế */
-    KalmanOdometry_Predict(dt_s);
+    /* 1. Cập nhật chu kỳ dt_s thực tế cho bộ ước lượng hướng GyroZ + ZUPT */
+    GyroZupt_SetDt(dt_s);
 
     /* 2. Cập nhật đo lường từ GyroZ (Quy ước: Gyro dương -> theta tăng) */
-    KalmanOdometry_UpdateGyro(gyro_z_dps);
+    GyroZupt_UpdateGyro(gyro_z_dps);
 
-    /* 3. Cập nhật đo lường từ Encoder hoặc Zero-Velocity Update (ZUPT) */
-    float gyro_unbiased = gyro_z_dps - KalmanOdometry_GetGyroBias();
+    /* 3. Khóa đứng yên (ZUPT) hoặc tích phân góc hướng theo GyroZ */
+    float gyro_unbiased = gyro_z_dps - GyroZupt_GetGyroBias();
     uint8_t is_stationary = (raw_wheel_step_deltas[ENCODER_LEFT] == 0 &&
                              raw_wheel_step_deltas[ENCODER_RIGHT] == 0 &&
                              fabsf(gyro_unbiased) < 2.5f) ? 1U : 0U;
     if (is_stationary != 0U) {
-      KalmanOdometry_UpdateZeroVelocity();
+      GyroZupt_UpdateZeroVelocity();
     } else {
-      KalmanOdometry_UpdateEncoder(enc_omega_dps, false);
+      GyroZupt_UpdateHeading(enc_omega_dps);
     }
 
-    odometry_state.heading_deg = KalmanOdometry_GetHeading();
-    odometry_state.angular_rad_s = KalmanOdometry_GetAngularVelocityRad();
+    odometry_state.heading_deg = GyroZupt_GetHeading();
+    odometry_state.angular_rad_s = GyroZupt_GetAngularVelocityRad();
     heading_delta_rad = odometry_state.angular_rad_s * dt_s;
   } else {
     /* Phương án dự phòng thuần Encoder nếu không có Gyro */
@@ -246,6 +246,6 @@ HAL_StatusTypeDef Odometry_Reset(void) {
   }
   speed_window_sample_count = 0U;
 
-  KalmanOdometry_Reset(ODOMETRY_INITIAL_HEADING_DEG);
+  GyroZupt_Reset(ODOMETRY_INITIAL_HEADING_DEG);
   return HAL_OK;
 }
